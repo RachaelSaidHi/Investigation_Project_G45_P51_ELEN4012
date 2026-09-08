@@ -1,0 +1,30 @@
+MANIFEST_COLUMNS = [
+    "sample_id",
+    "dataset",
+    "source_split",
+    "source_sample_id",
+    "filepath",
+    "speaker_id",
+    "accent_raw",
+    "accent_group",
+    "country",
+    "sex",
+    "age",
+    "duration_s",
+    "original_sample_rate",
+    "snr_est",
+    "domain",
+    "reference_transcript",
+]
+
+REQUIRED_COLUMNS = [
+    "sample_id",
+    "dataset",
+    "source_sample_id",
+    "filepath",
+    "speaker_id",
+    "accent_raw",
+    "duration_s",
+    "original_sample_rate",
+    "reference_transcript",
+]
