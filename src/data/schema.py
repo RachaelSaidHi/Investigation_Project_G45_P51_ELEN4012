@@ -8,8 +8,11 @@ MANIFEST_COLUMNS = [
     "accent_raw",
     "accent_group",
     "country",
+    "native_language",
+    "birthplace",
     "sex",
     "age",
+    "age_onset"
     "duration_s",
     "original_sample_rate",
     "snr_est",
