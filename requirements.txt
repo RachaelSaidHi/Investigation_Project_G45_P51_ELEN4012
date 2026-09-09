@@ -1,3 +1,4 @@
 # Use exact versions
 transformers
 librosa
+jiwer
