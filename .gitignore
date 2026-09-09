@@ -1,6 +1,9 @@
 # raw datasets
 data/raw/
 
+# generated manifests
+data/manifests/
+
 # Python
 __pycache__/
 *.py[cod]
