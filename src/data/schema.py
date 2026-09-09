@@ -12,7 +12,8 @@ MANIFEST_COLUMNS = [
     "birthplace",
     "sex",
     "age",
-    "age_onset"
+    "age_group",
+    "age_onset",
     "duration_s",
     "original_sample_rate",
     "snr_est",
