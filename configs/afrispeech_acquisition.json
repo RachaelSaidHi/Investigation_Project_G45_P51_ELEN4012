@@ -1,0 +1,9 @@
+{
+    "revision": "main",
+    "selections": [
+        {
+            "accent": "afemai",
+            "splits": ["test"]
+        }
+    ]
+}
