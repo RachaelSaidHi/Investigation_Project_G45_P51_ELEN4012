@@ -2,3 +2,4 @@
 transformers
 librosa
 jiwer
+pytest
