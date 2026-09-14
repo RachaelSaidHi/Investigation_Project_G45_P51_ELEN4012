@@ -1,5 +1,5 @@
 """
-Tests for the normaliser
+Tests for the normalization functionality
 """
 
 import pytest
@@ -32,9 +32,9 @@ class TestRemoveExactPhrases:
         assert removed == 1
  
     def test_multi_word_phrase_is_removed(self):
-        text, removed = strip_punctuation("i am here full stop")
+        text, removed = strip_punctuation("i am here full stop hello")
  
-        assert text == "i am here"
+        assert text == "i am here hello"
         assert removed == 1
  
     def test_phrase_inside_longer_word_is_not_removed(self):
@@ -56,16 +56,22 @@ class TestRemoveExactPhrases:
         assert removed == 2
  
     def test_longer_phrase_matched_before_shorter_one(self):
-        text, removed = strip_punctuation("results semi colon next")
+        text, removed = strip_punctuation("results semi colon next colon check")
  
-        assert text == "results next"
-        assert removed == 1
+        assert text == "results next check"
+        assert removed == 2
  
     def test_phrase_at_start_of_text(self):
         text, removed = strip_punctuation("comma hello there")
  
         assert text == "hello there"
         assert removed == 1
+
+    def test_phrase_at_end_of_text(self):
+            text, removed = strip_punctuation("hello there semi colon")
+     
+            assert text == "hello there"
+            assert removed == 1
  
     def test_text_that_is_entirely_a_phrase(self):
         text, removed = strip_punctuation("full stop")
@@ -95,6 +101,12 @@ class TestRemoveDuplicateWhitespace:
  
     def test_empty_text_is_handled(self):
         assert remove_duplicate_whitespace("   ") == ""
+
+    def test_no_whitespace_remains_unchanged(self):
+            assert remove_duplicate_whitespace("abcd") == "abcd"
+
+    def test_no_repeated_whitespace_remains_unchanged(self):
+            assert remove_duplicate_whitespace("a b c d") == "a b c d"
 
 
 class TestNormalizeText:
@@ -132,7 +144,7 @@ class TestNormalizeText:
         Tests the Stage 1 behaviours the pipeline depends on, so a library change that removed them can be caught.
         """
 
-        text, _ = normalize_text("She DOESN'T have Six spoons", "afrispeech")
+        text, _ = normalize_text("She DOESN'T have: Six, spoons!", "afrispeech")
 
         assert text == "she does not have 6 spoons"
  
