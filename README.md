@@ -1,6 +1,97 @@
 # Investigation_Project_G45_P51_ELEN4012
 
 
+## 1. Clone and install
+
+```bash
+git clone <repo-url>
+cd <repo>
+python -m venv .venv
+source .venv/bin/activate      # Linux/Mac
+.venv\Scripts\activate         # Windows
+pip install -r requirements.txt
+```
+
+## 2. Acquire the Speech Accent Archive
+
+Download the dataset from Kaggle:
+https://www.kaggle.com/datasets/rtatman/speech-accent-archive
+
+After extracting it, place the files under:
+
+```
+data/
+└── raw/
+    └── saa/
+        ├── speakers_all.csv
+        ├── reading-passage.txt
+        └── recordings/
+            └── recordings/
+                ├── afrikaans1.mp3
+                ├── afrikaans2.mp3
+                ├── ...
+                └── yoruba5.mp3
+```
+The nested recordings/recordings/ comes from the original Kaggle structure
+The `data/` directory is in `.gitignore` and is not committed.
+
+## 3. Build the manifests
+
+Run these three scripts in order from the project root:
+
+```bash
+# Step 1: Build the full SAA manifest (all 2,138 recordings)
+python -m scripts.build_manifest
+
+# Step 2: Filter to the study accent groups and apply adult filter
+python -m scripts.build_study_manifest
+
+# Step 3: Build the small dev subset for quick iteration
+python -m scripts.build_dev_manifest
+```
+
+This produces three files in `data/manifests/`:
+
+| File | Contents | Use |
+|---|---|---|
+| `full_manifest.csv` | Every SAA recording in standardised format | Not used directly — input to the next step |
+| `study_manifest.csv` | ~409 recordings from the 7 selected accent groups | The actual experimental dataset |
+| `dev_manifest.csv` | ~14 recordings, 1 female + 1 male per group | Quick pipeline development and testing |
+
+## 4. Verify
+
+```bash
+python -m pytest -v
+```
+
+All tests should pass. If SAA is not installed, the SAA loader tests will skip rather than fail.
+
+## 5. What the manifests contain
+
+Both `study_manifest.csv` and `dev_manifest.csv` have the same columns. The important ones for the ASR pipeline are:
+
+- `sample_id` — unique identifier used to key results
+- `filepath` — path to the audio file relative to `data/raw/`
+- `accent_group` — the experimental accent category
+- `reference_transcript` — the correct transcript for WER computation
+- `sex` — needed later for sex-matched analysis
+- `speaker_id` — one recording per speaker in SAA
+
+To load audio for a given manifest row:
+
+```python
+from pathlib import Path
+import pandas as pd
+
+DATA_ROOT = Path("data/raw")
+manifest = pd.read_csv("data/manifests/study_manifest.csv")
+
+row = manifest.iloc[0]
+audio_path = DATA_ROOT / row["filepath"]
+```
+
+## Repo Structure
+
 ```
 project/
 │
