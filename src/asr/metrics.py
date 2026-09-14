@@ -48,6 +48,11 @@ def compute_wer(reference: str, hypothesis: str,) -> WERResult:
     # the reference words (N) do not include insertions since they did not occur in the reference transcript
     reference_words = (result.hits+ result.substitutions+ result.deletions)
 
+    # N is derived from the alignment, but it must equal the number of words in the reference. 
+    # If jiwer ever changes how it counts, this would silently corrupt every corpus WER, so it is checked here.
+    if reference_words != len(reference.split()):
+        raise RuntimeError("Reference word count mismatch: alignment gave " + str(reference_words) + " but the reference has " + str(len(reference.split())) + " words.")
+
     return WERResult(
         wer = float(result.wer),
         substitutions = int(result.substitutions),
