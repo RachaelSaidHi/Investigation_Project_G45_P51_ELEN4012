@@ -177,3 +177,5 @@ class TestNormalizeText:
     def test_unknown_dataset_fails(self):
         with pytest.raises(ValueError, match="Unknown dataset"):
             normalize_text("stable alert", "afrispeach")
+
+# run using python -m pytest tests/test_normalization.py -v

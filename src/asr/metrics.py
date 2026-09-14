@@ -13,7 +13,7 @@ class WERResult:
     deletions: int          # words that are ommited 
     insertions: int         # words that are incorrectly added
     hits: int               # correctly recognised words
-    reference_words: int    # total words in the reference transcript
+    n_reference_words: int    # total words in the reference transcript
 
 
 def compute_wer(reference: str, hypothesis: str,) -> WERResult:
@@ -40,8 +40,8 @@ def compute_wer(reference: str, hypothesis: str,) -> WERResult:
 
     # TODO: decide whether to keep this or not
     # could this be good to have as all deletions, extremely bad transcription
-    if not hypothesis.strip():
-        raise ValueError("Hypothsis transcript cannot be empty.")
+    # if not hypothesis.strip():
+    #     raise ValueError("Hypothsis transcript cannot be empty.")
 
     result = process_words(reference, hypothesis)
 
@@ -54,6 +54,6 @@ def compute_wer(reference: str, hypothesis: str,) -> WERResult:
         deletions = int(result.deletions),
         insertions = int(result.insertions),
         hits = int(result.hits),
-        reference_words = int(reference_words),
+        n_reference_words = int(reference_words),
     )
 
