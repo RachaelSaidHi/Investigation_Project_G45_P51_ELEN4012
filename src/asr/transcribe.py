@@ -1,120 +1,189 @@
-from transformers import WhisperProcessor, WhisperForConditionalGeneration
+from dataclasses import dataclass
+from time import perf_counter
+import numpy as np
 import torch
 import librosa
+from transformers import (WhisperProcessor, WhisperForConditionalGeneration)
 
-MODEL_NAME = "openai/whisper-medium"
+SAMPLE_RATE = 16000
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# TODO: Decide whether to use only 30s audio clips or less or along for longer audios to be analysed (then need to do chunking)
+MAX_SINGLE_WINDOW_S = 30
 
-if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
-else:
-    print("Not using GPU")
+@dataclass(frozen=True)
+class TranscriptionResult:
+    """
+    Stores the raw result of transcribing one audio sample before any normalization.
+    """
 
-# load model and processor
-processor = WhisperProcessor.from_pretrained(MODEL_NAME)
-model = WhisperForConditionalGeneration.from_pretrained(MODEL_NAME).to(device)
-model.generation_config.forced_decoder_ids = None
-# model.config.forced_decoder_ids = processor.get_decoder_prompt_ids(language="english", task="transcribe")
-
-# load the audio file
-audio, sr = librosa.load(
-    "afrikaans1.mp3",
-    sr=16000,
-    mono=True
-)
-
-# convert waveform into required Whisper log-mel input features
-inputs = processor(
-    audio,
-    sampling_rate=16000,
-    return_tensors="pt"
-)
-input_features = inputs.input_features.to(device)
-
-print("Model:", next(model.parameters()).device)
-print("Input:", input_features.device)
-
-# set decoder_ids to force whisper to do english transcription
-forced_decoder_ids = processor.get_decoder_prompt_ids(
-    language="english",
-    task="transcribe"
-)
+    text: str                   # the raw transcript, exactly as Whisper generated it
+    duration_s: float           # length of the audio
+    feature_s: float            # mel-spectrogram extraction (CPU, roughly constant per model)
+    inference_s: float          # model.generate, the part that scales with model size
+    decode_s: float             # token ids to text (CPU, negligible)
+    elapsed_s: float            # sum of the three (how long the full transcription took)
+    real_time_factor: float     # elapsed_s / duration_s (below 1.0 is faster than real time)
 
 
-# execute the transcription
-with torch.no_grad():
-    predicted_ids = model.generate(
-        input_features,
-        forced_decoder_ids=forced_decoder_ids
+# TODO: check this with Rachael's manifest because she has a duration_s row 
+# Also the resampling to 16 kHz should actually be part of preprocessing so will eventually be removed from here
+def load_audio(filepath: str):
+    """
+    Load an audio file as mono 16 kHz audio
+    """
+
+    audio, _ = librosa.load(
+        filepath,
+        sr=SAMPLE_RATE,
+        mono=True,
     )
 
-transcription = processor.batch_decode(
-    predicted_ids,
-    skip_special_tokens=True,
-    clean_up_tokenization_spaces=False
-)[0]
+    if len(audio) == 0:
+        raise ValueError("Audio file is empty.")
 
-print(transcription)
+    duration_s = len(audio) / SAMPLE_RATE
 
-
-from jiwer import process_words
-
-reference_raw = """
-Please call Stella.  Ask her to bring these things with her from the store:  Six spoons of fresh snow peas, five thick slabs of blue cheese, and maybe a snack for her brother Bob.  We also need a small plastic snake and a big toy frog for the kids.  She can scoop these things into three red bags, and we will go meet her Wednesday at the train station.
-"""
-
-hypothesis_raw = transcription
-
-reference_norm = processor.tokenizer.normalize(reference_raw)
-hypothesis_norm = processor.tokenizer.normalize(hypothesis_raw)
-
-result = process_words(reference_norm, hypothesis_norm)
-
-print("Reference:", reference_norm)
-print("Hypothesis:", hypothesis_norm)
-
-print("WER:", result.wer)
-print("Substitutions:", result.substitutions)
-print("Deletions:", result.deletions)
-print("Insertions:", result.insertions)
+    return audio, duration_s
 
 
-# Whisper results for different models:
-# Tiny: Please call Stala, ask her to bring these things with her from the store 6 spoons of freshener peas, 5 thick slabs of blue cheese and maybe a snack for her brother-bop. We also need a small plastic snake and a big to a frog for the kids. She can scoop these things into free-dread bags and we will go meet a wind-stad train station.
-# Base: Please call Stella, ask her to bring these things with her from the store. 6 spoons of fresh snow peas, 5 thick slabs of blue cheese and maybe a snack for her brother bob. We also need a small plastic snake and a big twig for the kids. She can scoop these things into free-read bags and we will go meet a windstair train station.
-# Small: Please call Stella. Ask her to bring these things with her from the store. Six spoons of fresh snow peas, five thick slabs of blue cheese and maybe a snack for her brother Bob. We also need a small plastic snake and a big two-way frog for the kids. She can scoop these things into free red bags and we will go meet her when she's at the train station.
-# Medium: Please call Stella. Ask her to bring these things with her from the store. Six spoons of fresh snow peas, five thick slabs of blue cheese, and maybe a snack for her brother Bob. We also need a small plastic snake and a big two-way frog for the kids. She can scoop these things into free red bags and we will go meet her Wednesday at the train station.
+class WhisperTranscriber:
+    """
+    Loads one Whisper model and reuses it for multiple recordings.
+    """
 
-# Tiny:
-# Reference: please call stella ask her to bring these things with her from the store 6 spoons of fresh snow peas 5 thick slabs of blue cheese and maybe a snack for her brother bob we also need a small plastic snake and a big toy frog for the kids she can scoop these things into 3 red bags and we will go meet her wednesday at the train station
-# Hypothesis: please call stala ask her to bring these things with her from the store 6 spoons of freshener peas 5 thick slabs of blue cheese and maybe a snack for her brother bop we also need a small plastic snake and a big to a frog for the kids she can scoop these things into free dread bags and we will go meet a wind stad train station
-# WER: 0.17391304347826086
-# Substitutions: 9
-# Deletions: 2
-# Insertions: 1
+    def __init__(
+        self,
+        model_name: str,
+        device: str | None = None,
+        use_fp16: bool = True,
+    ):
+        
+        if device is None:
+            device = ("cuda" if torch.cuda.is_available() else "cpu")
 
-# Base:
-# Reference: please call stella ask her to bring these things with her from the store 6 spoons of fresh snow peas 5 thick slabs of blue cheese and maybe a snack for her brother bob we also need a small plastic snake and a big toy frog for the kids she can scoop these things into 3 red bags and we will go meet her wednesday at the train station
-# Hypothesis: please call stella ask her to bring these things with her from the store 6 spoons of fresh snow peas 5 thick slabs of blue cheese and maybe a snack for her brother bob we also need a small plastic snake and a big twig for the kids she can scoop these things into free read bags and we will go meet a windstair train station
-# WER: 0.11594202898550725
-# Substitutions: 5
-# Deletions: 3
-# Insertions: 0
+        self.device = torch.device(device)
 
-# Small:
-# Reference: please call stella ask her to bring these things with her from the store 6 spoons of fresh snow peas 5 thick slabs of blue cheese and maybe a snack for her brother bob we also need a small plastic snake and a big toy frog for the kids she can scoop these things into 3 red bags and we will go meet her wednesday at the train station
-# Hypothesis: please call stella ask her to bring these things with her from the store 6 spoons of fresh snow peas 5 thick slabs of blue cheese and maybe a snack for her brother bob we also need a small plastic snake and a big 2 way frog for the kids she can scoop these things into free red bags and we will go meet her when she is at the train station
-# WER: 0.08695652173913043
-# Substitutions: 3
-# Deletions: 0
-# Insertions: 3
+        # uses fp16 with GPU and fp32 with CPU
+        if use_fp16 and self.device.type == "cuda":
+            self.dtype = torch.float16
+        else:
+            self.dtype = torch.float32
 
-# Medium:
-# Reference: please call stella ask her to bring these things with her from the store 6 spoons of fresh snow peas 5 thick slabs of blue cheese and maybe a snack for her brother bob we also need a small plastic snake and a big toy frog for the kids she can scoop these things into 3 red bags and we will go meet her wednesday at the train station
-# Hypothesis: please call stella ask her to bring these things with her from the store 6 spoons of fresh snow peas 5 thick slabs of blue cheese and maybe a snack for her brother bob we also need a small plastic snake and a big 2 way frog for the kids she can scoop these things into free red bags and we will go meet her wednesday at the train station
-# WER: 0.043478260869565216
-# Substitutions: 2
-# Deletions: 0
-# Insertions: 1
+        self.model_name = model_name
+        self.is_english_only = model_name.endswith(".en")
+
+        self.processor = WhisperProcessor.from_pretrained(model_name)
+        self.model = WhisperForConditionalGeneration.from_pretrained(model_name, torch_dtype = self.dtype).to(self.device)
+        self.model.eval()
+
+
+    def describe(self) -> dict:
+        """
+        Returns the inference configuration for reproducibility.
+        """
+
+        if self.device.type == "cuda":
+            hardware = torch.cuda.get_device_name(self.device)
+        else:
+            hardware = "CPU"
+
+        return {
+            "model_name": self.model_name,
+            "device": str(self.device),
+            "hardware": hardware,
+            "precision": str(self.dtype),
+        }
+
+
+    def _synchronise(self):
+        """
+        Wait for outstanding CUDA work before timing.
+        """
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+
+    # TODO: decide if only ever using 30s or less audio else have some sort of chunking strategy 
+    def transcribe(self, filepath: str) -> TranscriptionResult:
+        """
+        Transcribe one mono 16 kHz waveform.
+
+        Audio longer than 30 seconds is rejected so that all samples use the same short-form Whisper decoding procedure.
+        """
+
+        if filepath is None or filepath == "":
+            raise ValueError("Audio cannot be None or empty.")
+
+        audio, duration_s = load_audio(filepath)
+
+        if duration_s > MAX_SINGLE_WINDOW_S:
+            raise ValueError(
+                f"Audio is {duration_s:.1f} seconds long. "
+                f"Maximum supported duration is {MAX_SINGLE_WINDOW_S:.1f} seconds."
+            )
+
+        generate_kwargs = {
+            "num_beams": 1,
+            "do_sample": False,
+            "return_timestamps": False,
+            "task": "transcribe"
+        }
+
+        # Multilingual Whisper models are explicitly constrained to English speech recognition.
+        if not self.is_english_only:
+            generate_kwargs["language"] = "english"
+
+
+        # Time the complete transcription computation, but not file loading or model loading.
+        # RTF = (feature extraction + inference + decoding time)/audio duration not just generation time
+        self._synchronise()
+        t0 = perf_counter()
+
+        inputs = self.processor(
+            audio,
+            sampling_rate=SAMPLE_RATE,
+            return_tensors="pt",
+        )
+
+        input_features = inputs.input_features.to(
+            device=self.device,
+            dtype=self.dtype,
+        )
+
+        self._synchronise()
+        t1 = perf_counter()
+
+        with torch.inference_mode():
+            predicted_ids = self.model.generate(
+                input_features,
+                **generate_kwargs,
+            )
+
+        self._synchronise()
+        t2 = perf_counter()
+
+        text = self.processor.batch_decode(
+            predicted_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )[0].strip()
+
+        self._synchronise()
+        t3 = perf_counter()
+
+        feature_s = t1 - t0
+        inference_s = t2 - t1
+        decode_s = t3 - t2
+        elapsed_s = t3 - t0
+
+        return TranscriptionResult(
+            text=text,
+            duration_s=float(duration_s),
+            feature_s=float(feature_s),
+            inference_s=float(inference_s),
+            decode_s=float(decode_s),
+            elapsed_s=float(elapsed_s),
+            real_time_factor=float(elapsed_s / duration_s),
+        )
+
 
