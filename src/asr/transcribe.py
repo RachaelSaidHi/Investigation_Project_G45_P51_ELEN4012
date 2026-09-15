@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from time import perf_counter
-import numpy as np
 import torch
 import librosa
 from transformers import (WhisperProcessor, WhisperForConditionalGeneration)
@@ -18,24 +17,24 @@ class TranscriptionResult:
 
     text: str                   # the raw transcript, exactly as Whisper generated it
     duration_s: float           # length of the audio
-    feature_s: float            # mel-spectrogram extraction (CPU, roughly constant per model)
+    feature_s: float            # mel-spectrogram extraction (CPU)
     inference_s: float          # model.generate, the part that scales with model size
-    decode_s: float             # token ids to text (CPU, negligible)
+    decode_s: float             # token ids to text (CPU)
     elapsed_s: float            # sum of the three (how long the full transcription took)
     real_time_factor: float     # elapsed_s / duration_s (below 1.0 is faster than real time)
 
 
-# TODO: check this with Rachael's manifest because she has a duration_s row 
-# Also the resampling to 16 kHz should actually be part of preprocessing so will eventually be removed from here
+# TODO: check this with Rachael's manifest because she has a duration_s row (maybe compare the two to make sure they match)
+# resampling belongs in preprocessing, so this will eventually take already-prepared audio.
 def load_audio(filepath: str):
     """
-    Load an audio file as mono 16 kHz audio
+    Load an audio file as mono 16 kHz audio and return it with its duration
     """
 
     audio, _ = librosa.load(
         filepath,
-        sr=SAMPLE_RATE,
-        mono=True,
+        sr = SAMPLE_RATE,
+        mono = True,
     )
 
     if len(audio) == 0:
@@ -57,19 +56,27 @@ class WhisperTranscriber:
         device: str | None = None,
         use_fp16: bool = True,
     ):
+        """
+        Args:
+            model_name: Hugging Face checkpoint, e.g. "openai/whisper-small".
+            device:     "cuda" or "cpu". Detected automatically if not given.
+            use_fp16:   half precision on GPU. Affects the transcript not only the speed, so it must match across the sweep.
+        """
         
         if device is None:
             device = ("cuda" if torch.cuda.is_available() else "cpu")
 
         self.device = torch.device(device)
 
-        # uses fp16 with GPU and fp32 with CPU
+        # uses fp16 with GPU and fp32 with CPU (half precision is only worth using on GPU; on CPU it is slower)
         if use_fp16 and self.device.type == "cuda":
             self.dtype = torch.float16
         else:
             self.dtype = torch.float32
 
         self.model_name = model_name
+
+        # The .en checkpoints are English-only and take no language or task tokens, so the decoder prompt has to be built differently for them.
         self.is_english_only = model_name.endswith(".en")
 
         self.processor = WhisperProcessor.from_pretrained(model_name)
@@ -97,7 +104,7 @@ class WhisperTranscriber:
 
     def _synchronise(self):
         """
-        Wait for outstanding CUDA work before timing.
+        Wait for outstanding/queued CUDA work to finish before timing.
         """
 
         if self.device.type == "cuda":
@@ -106,9 +113,9 @@ class WhisperTranscriber:
     # TODO: decide if only ever using 30s or less audio else have some sort of chunking strategy 
     def transcribe(self, filepath: str) -> TranscriptionResult:
         """
-        Transcribe one mono 16 kHz waveform.
+        Transcribe one audio file.
 
-        Audio longer than 30 seconds is rejected so that all samples use the same short-form Whisper decoding procedure.
+        Audio longer than 30 seconds is rejected so that every sample in an analysis goes through the same decoding path.
         """
 
         if filepath is None or filepath == "":
@@ -122,16 +129,17 @@ class WhisperTranscriber:
                 f"Maximum supported duration is {MAX_SINGLE_WINDOW_S:.1f} seconds."
             )
 
+        # Greedy decoding with no sampling, so the output is deterministic for a given model, precision and device.
         generate_kwargs = {
             "num_beams": 1,
             "do_sample": False,
             "return_timestamps": False,
-            "task": "transcribe"
         }
 
         # Multilingual Whisper models are explicitly constrained to English speech recognition.
         if not self.is_english_only:
             generate_kwargs["language"] = "english"
+            generate_kwargs["task"] = "transcribe"
 
 
         # Time the complete transcription computation, but not file loading or model loading.
@@ -162,6 +170,7 @@ class WhisperTranscriber:
         self._synchronise()
         t2 = perf_counter()
 
+        # clean_up_tokenization_spaces is off so that spacing is not altered before normalisation sees the text.
         text = self.processor.batch_decode(
             predicted_ids,
             skip_special_tokens=True,
