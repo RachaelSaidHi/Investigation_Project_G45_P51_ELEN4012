@@ -1,0 +1,23 @@
+{
+    "revision": "main",
+    "selections": [
+        {
+            "accent": "afemai",
+            "splits": [
+                "test"
+            ]
+        },
+        {
+            "accent": "hausa",
+            "splits": [
+                "test"
+            ]
+        },
+        {
+            "accent": "yoruba",
+            "splits": [
+                "test"
+            ]
+        }
+    ]
+}

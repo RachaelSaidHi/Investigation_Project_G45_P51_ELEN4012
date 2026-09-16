@@ -1,4 +1,8 @@
 # Use exact versions
+pandas==3.0.5
+mutagen==1.48.1
+pytest==9.1.1
+datasets==5.0.1
 transformers
 librosa
 jiwer

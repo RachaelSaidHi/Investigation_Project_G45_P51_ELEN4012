@@ -1,4 +1,29 @@
-__pycache__
+# raw datasets
+data/raw/
+
+# generated manifests
+data/manifests/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / editor files
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db__pycache__
 
 # Experimentation files
 *experiment.py
