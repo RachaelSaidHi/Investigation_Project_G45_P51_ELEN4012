@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.data.loaders import load_saa
+from data.load_saa import load_saa
 from src.data.schema import MANIFEST_COLUMNS, REQUIRED_COLUMNS
 
 
