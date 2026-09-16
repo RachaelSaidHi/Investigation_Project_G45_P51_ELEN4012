@@ -64,18 +64,21 @@ def load_full_manifest() -> pd.DataFrame:
 
 
 def select_accent_groups(manifest: pd.DataFrame) -> pd.DataFrame:
-    """Select rows belonging to the defined accent groups and assign labels."""
+    """Select SAA rows belonging to the defined accent groups and assign labels."""
+
+    saa = manifest[manifest["dataset"] == "saa"].copy()
+
     selected = []
 
     for group_label, rules in ACCENT_GROUPS.items():
 
-        mask = pd.Series(True, index=manifest.index) # first assumes every SAA row could belong to this group
+        mask = pd.Series(True, index=saa.index) # first assumes every SAA row could belong to this group
 
         # then applies every rule defined for the group
         for column, value in rules.items():
-            mask = mask & (manifest[column] == value)
+            mask = mask & (saa[column] == value)
 
-        group_df = manifest[mask].copy()
+        group_df = saa[mask].copy()
 
         if group_df.empty:
             raise ValueError(f"No SAA samples found for accent group '{group_label}'.")
@@ -84,6 +87,7 @@ def select_accent_groups(manifest: pd.DataFrame) -> pd.DataFrame:
         selected.append(group_df)
 
     return pd.concat(selected, ignore_index=True)
+
 
 
 def filter_adults(manifest: pd.DataFrame) -> pd.DataFrame:
