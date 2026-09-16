@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.loaders import load_saa
+from data.load_saa import load_saa
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
