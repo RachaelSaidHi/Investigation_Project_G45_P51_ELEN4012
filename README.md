@@ -12,7 +12,24 @@ source .venv/bin/activate      # Linux/Mac
 pip install -r requirements.txt
 ```
 
-## 2. Acquire the Speech Accent Archive
+## 2. Set Up Whisper
+1. Create a Hugging Face account
+2. Run:
+```
+hf auth login
+```
+3. Install PyTorch
+* if you have a NVIDIA GPU:
+```
+python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
+```
+* otherwise CPU only:
+```
+python -m pip install torch torchvision
+```
+
+
+## 3. Acquire the Speech Accent Archive
 
 Download the dataset from Kaggle:
 https://www.kaggle.com/datasets/rtatman/speech-accent-archive
@@ -35,7 +52,7 @@ data/
 The nested recordings/recordings/ comes from the original Kaggle structure
 The `data/` directory is in `.gitignore` and is not committed.
 
-## 3. Build the manifests
+## 4. Build the manifests
 
 Run these three scripts in order from the project root:
 
@@ -58,7 +75,7 @@ This produces three files in `data/manifests/`:
 | `study_manifest.csv` | ~409 recordings from the 7 selected accent groups | The actual experimental dataset |
 | `dev_manifest.csv` | ~14 recordings, 1 female + 1 male per group | Quick pipeline development and testing |
 
-## 4. Verify
+## 5. Verify
 
 ```bash
 python -m pytest -v
@@ -88,26 +105,6 @@ manifest = pd.read_csv("data/manifests/study_manifest.csv")
 
 row = manifest.iloc[0]
 audio_path = DATA_ROOT / row["filepath"]
-```
-
-## Setting Up Whisper
-1. Create a Hugging Face account
-2. Run:
-```
-hf auth login
-```
-3. Install PyTorch
-* if you have a NVIDIA GPU:
-```
-python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
-```
-* otherwise CPU only:
-```
-python -m pip install torch torchvision
-```
-4. Install remaining project dependencies
-```
-python -m pip install -r requirements.txt
 ```
 
 ## Project Repo Structure
