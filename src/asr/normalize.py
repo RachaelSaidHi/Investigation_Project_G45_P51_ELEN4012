@@ -112,7 +112,7 @@ def normalize_text(input_text: str, dataset: str) -> tuple:
     # Stage 2: dataset specific normalization
     dataset = dataset.lower().strip() 
 
-    if dataset not in ("afrispeech", "speech_accent_archive", "edacc"):
+    if dataset not in ("afrispeech", "saa", "edacc"):
         raise ValueError("Unknown dataset: " + dataset)
     
     removed = 0

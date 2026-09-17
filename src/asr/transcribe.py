@@ -17,7 +17,7 @@ class TranscriptionResult:
 
     text: str                   # the raw transcript, exactly as Whisper generated it
     duration_s: float           # length of the audio
-    feature_s: float            # mel-spectrogram extraction (CPU)
+    preprocess_s: float         # mel-spectrogram extraction (CPU) and transfer to model device
     inference_s: float          # model.generate, the part that scales with model size
     decode_s: float             # token ids to text (CPU)
     elapsed_s: float            # sum of the three (how long the full transcription took)
@@ -60,7 +60,7 @@ class WhisperTranscriber:
         Args:
             model_name: Hugging Face checkpoint, e.g. "openai/whisper-small".
             device:     "cuda" or "cpu". Detected automatically if not given.
-            use_fp16:   half precision on GPU. Affects the transcript not only the speed, so it must match across the sweep.
+            use_fp16:   half precision on GPU. Can affect the transcript as well as speed, so it must match across the model sweep.
         """
         
         if device is None:
@@ -118,18 +118,27 @@ class WhisperTranscriber:
         Audio longer than 30 seconds is rejected so that every sample in an analysis goes through the same decoding path.
         """
 
-        if filepath is None or filepath == "":
-            raise ValueError("Audio cannot be None or empty.")
+        if not filepath:
+            raise ValueError("Audio filepath cannot be None or empty.")
 
         audio, duration_s = load_audio(filepath)
 
         if duration_s > MAX_SINGLE_WINDOW_S:
-            raise ValueError(
-                f"Audio is {duration_s:.1f} seconds long. "
-                f"Maximum supported duration is {MAX_SINGLE_WINDOW_S:.1f} seconds."
-            )
+            return TranscriptionResult(
+                        text="",
+                        duration_s=0,
+                        preprocess_s=0,
+                        inference_s=0,
+                        decode_s=0,
+                        elapsed_s=0,
+                        real_time_factor=0,
+                    )
+            # raise ValueError(
+            #     f"Audio is {duration_s:.1f} seconds long. "
+            #     f"Maximum supported duration is {MAX_SINGLE_WINDOW_S:.1f} seconds."
+            # )
 
-        # Greedy decoding with no sampling, so the output is deterministic for a given model, precision and device.
+        # Greedy decoding with no stochastic sampling. The same decoding policy is used for every model in the sweep. so the output is deterministic for a given model, precision and device.
         generate_kwargs = {
             "num_beams": 1,
             "do_sample": False,
@@ -180,7 +189,7 @@ class WhisperTranscriber:
         self._synchronise()
         t3 = perf_counter()
 
-        feature_s = t1 - t0
+        preprocess_s = t1 - t0
         inference_s = t2 - t1
         decode_s = t3 - t2
         elapsed_s = t3 - t0
@@ -188,7 +197,7 @@ class WhisperTranscriber:
         return TranscriptionResult(
             text=text,
             duration_s=float(duration_s),
-            feature_s=float(feature_s),
+            preprocess_s=float(preprocess_s),
             inference_s=float(inference_s),
             decode_s=float(decode_s),
             elapsed_s=float(elapsed_s),
