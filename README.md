@@ -93,7 +93,9 @@ This produces three files in `data/manifests/`:
 ## 5. Verify
 
 ```bash
-python -m pytest -v
+python -m pytest tests/test_dev_manifest.py -v
+python -m pytest tests/test_saa_loader.py -v
+python -m pytest tests/test_study_manifest.py -v
 ```
 
 All tests should pass. If SAA is not installed, the SAA loader tests will skip rather than fail.
@@ -120,6 +122,110 @@ manifest = pd.read_csv("data/manifests/study_manifest.csv")
 
 row = manifest.iloc[0]
 audio_path = DATA_ROOT / row["filepath"]
+```
+
+## 6. Testing
+
+All tests should be run from the repository root with the virtual environment activated.
+
+The current test suite covers:
+
+| Test file | Purpose |
+| --- | --- |
+| `test_dev_manifest.py` | Development-manifest generation |
+| `test_metrics.py` | WER calculation and substitution/deletion/insertion counts |
+| `test_normalization.py` | Transcript normalization |
+| `test_saa_loader.py` | Speech Accent Archive loading |
+| `test_study_manifest.py` | Study-manifest generation |
+| `test_transcription.py` | Whisper transcription, short-form/long-form decoding, timing, configuration and edge cases |
+| `test_validation.py` | Dataset/manifest validation |
+
+### Run all normal tests
+
+The real Whisper integration tests are skipped by default.
+
+```bash
+python -m pytest -m "not integration"
+```
+
+For more detailed output:
+
+```bash
+python -m pytest -m "not integration" -v
+```
+
+### Run a specific test file
+
+For example:
+
+```bash
+python -m pytest tests/test_metrics.py
+```
+
+Other test files can be run in the same way:
+
+```bash
+python -m pytest tests/test_dev_manifest.py
+python -m pytest tests/test_metrics.py
+python -m pytest tests/test_normalization.py
+python -m pytest tests/test_saa_loader.py
+python -m pytest tests/test_study_manifest.py
+python -m pytest tests/test_transcription.py -m "not integration"
+python -m pytest tests/test_validation.py
+```
+
+### Whisper integration tests
+
+Most tests in `test_transcription.py` use mocked Hugging Face processor/model objects. This keeps the unit tests fast and means they do not require a GPU or model download.
+
+`test_transcription.py` also contains integration tests that use the real Hugging Face `openai/whisper-tiny` model. These tests verify that the installed `transformers` version accepts the preprocessing and generation arguments used by the project.
+
+The integration tests are skipped by default because they are slower and may need to download/cache the Whisper checkpoint on the first run.
+
+#### Git Bash / Linux / macOS
+
+Enable and run only the integration tests:
+
+```bash
+export RUN_WHISPER_INTEGRATION=1
+python -m pytest -m integration -v
+```
+
+Remove the environment variable afterwards:
+
+```bash
+unset RUN_WHISPER_INTEGRATION
+```
+
+#### Windows PowerShell
+
+Enable and run only the integration tests:
+
+```powershell
+$env:RUN_WHISPER_INTEGRATION="1"
+python -m pytest -m integration -v
+```
+
+Remove the environment variable afterwards:
+
+```powershell
+Remove-Item Env:RUN_WHISPER_INTEGRATION
+```
+
+### Run the complete test suite, including integration tests
+
+#### Git Bash / Linux / macOS
+
+```bash
+export RUN_WHISPER_INTEGRATION=1
+python -m pytest -v
+```
+
+#### Windows PowerShell
+
+```powershell
+$env:RUN_WHISPER_INTEGRATION="1"
+python -m pytest -v
 ```
 
 ## Project Repo Structure
