@@ -31,10 +31,25 @@ python -m pip install torch torchvision
 
 ## 3. Acquire the Speech Accent Archive
 
-Download the dataset from Kaggle:
-https://www.kaggle.com/datasets/rtatman/speech-accent-archive
 
-After extracting it, place the files under:
+1. Download the dataset from Kaggle as zip:
+https://www.kaggle.com/datasets/rtatman/speech-accent-archive   
+**The dataset requires approximately 920 MB of disk space after extraction**
+
+2. In the project repository, create the following directory structure if it does not already exist:
+
+```
+data/
+└── raw/
+    └── saa/
+```
+
+3. Extract the contents of the downloaded ZIP file into:
+```   
+data/raw/saa
+```
+
+4. After extraction, the folder structure is:
 
 ```
 data/
@@ -49,7 +64,7 @@ data/
                 ├── ...
                 └── yoruba5.mp3
 ```
-The nested recordings/recordings/ comes from the original Kaggle structure
+The nested `recordings/recordings/` comes from the original Kaggle structure   
 The `data/` directory is in `.gitignore` and is not committed.
 
 ## 4. Build the manifests
@@ -58,7 +73,7 @@ Run these three scripts in order from the project root:
 
 ```bash
 # Step 1: Build the full SAA manifest (all 2,138 recordings)
-python -m scripts.build_manifest
+python -m scripts.build_full_saa_manifest
 
 # Step 2: Filter to the study accent groups and apply adult filter
 python -m scripts.build_study_manifest
