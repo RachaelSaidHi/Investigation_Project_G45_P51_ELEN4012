@@ -4,6 +4,9 @@ import torch
 import librosa
 from transformers import (WhisperProcessor, WhisperForConditionalGeneration)
 from typing import Literal
+from pathlib import Path
+
+# TODO: Make a whisper.yaml that can be used to adjust experimental configs
 
 SAMPLE_RATE = 16000
 
@@ -19,14 +22,14 @@ class TranscriptionResult:
     Stores the raw result of transcribing one audio sample before any normalization.
     """
 
-    text: str                   # the raw transcript, exactly as Whisper generated it
+    text: str                   # decoded Whisper transcript before project normalization
     duration_s: float           # length of the audio
     preprocess_s: float         # mel-spectrogram extraction (CPU) and transfer to model device
     inference_s: float          # model.generate, the part that scales with model size
     decode_s: float             # token ids to text (CPU)
     elapsed_s: float            # sum of the three (how long the full transcription took)
     real_time_factor: float     # elapsed_s / duration_s (below 1.0 is faster than real time)
-    decode_mode: str            # short-form or sequential long-form transcription
+    decode_mode: DecodeMode     # short-form or sequential long-form transcription
 
 
 # TODO: check this with Rachael's manifest because she has a duration_s row (maybe compare the two to make sure they match)
@@ -35,6 +38,17 @@ def load_audio(filepath: str):
     """
     Load an audio file as mono 16 kHz audio and return it with its duration
     """
+
+    if not filepath:
+        raise ValueError("Audio filepath cannot be None or empty.")
+
+    path = Path(filepath)
+
+    if not path.exists():
+        raise FileNotFoundError(f"Audio file does not exist: {path}")
+
+    if not path.is_file():
+        raise ValueError(f"Audio path is not a file: {path}")
 
     audio, _ = librosa.load(
         filepath,
@@ -78,6 +92,9 @@ class WhisperTranscriber:
             device = ("cuda" if torch.cuda.is_available() else "cpu")
 
         self.device = torch.device(device)
+
+        if (self.device.type == "cuda"and not torch.cuda.is_available()):
+            raise RuntimeError("CUDA was requested but is not available.")
 
         # uses fp16 with GPU and fp32 with CPU (half precision is only worth using on GPU; on CPU it is slower)
         if use_fp16 and self.device.type == "cuda":
@@ -127,11 +144,10 @@ class WhisperTranscriber:
         """
         Transcribe one audio file.
 
-        Audio longer than 30 seconds is rejected so that every sample in an analysis goes through the same decoding path.
+        Audio longer than 30 seconds when short-form is chosen is rejected with an error. 
+        The class object has a decode_path set on initialisation.
+        This ensures that every sample in an analysis goes through the same decoding path.
         """
-
-        if not filepath:
-            raise ValueError("Audio filepath cannot be None or empty.")
 
         audio, duration_s = load_audio(filepath)
 
@@ -141,40 +157,35 @@ class WhisperTranscriber:
                 f"Audio is {duration_s:.1f} seconds long, but short-form Whisper supports at most {MAX_SINGLE_WINDOW_S:.1f} s.\n"
                 f"Use decode_mode = 'sequential_long_form'."
                 )
-            
-            inputs = self.processor(
-                audio,
-                sampling_rate=SAMPLE_RATE,
-                return_tensors="pt",
-            )
+            processor_kwargs = {}
 
             return_timestamps = False
 
         elif self.decode_mode == "sequential_long_form":
-            inputs = self.processor(
-                audio,
-                sampling_rate=SAMPLE_RATE,
-                return_tensors="pt",
-                truncation=False,
-                return_attention_mask=True,
-            )
+            processor_kwargs = {
+                "truncation": False,
+                "return_attention_mask": True
+            }
 
             return_timestamps = True
 
-        # if duration_s > MAX_SINGLE_WINDOW_S:
-        #     return TranscriptionResult(
-        #                 text="",
-        #                 duration_s=0,
-        #                 preprocess_s=0,
-        #                 inference_s=0,
-        #                 decode_s=0,
-        #                 elapsed_s=0,
-        #                 real_time_factor=0,
-        #             )
-        #     raise ValueError(
-        #         f"Audio is {duration_s:.1f} seconds long. "
-        #         f"Maximum supported duration is {MAX_SINGLE_WINDOW_S:.1f} seconds."
-        #     )
+
+        # Time the complete transcription computation, but not file loading or model loading.
+        # RTF = (feature extraction + inference + decoding time)/audio duration not just generation time
+        self._synchronise()
+        t0 = perf_counter()
+
+        inputs = self.processor(
+            audio,
+            sampling_rate=SAMPLE_RATE,
+            return_tensors="pt",
+            **processor_kwargs
+        )
+
+        input_features = inputs.input_features.to(
+            device=self.device,
+            dtype=self.dtype,
+        )
 
         # Greedy decoding with no stochastic sampling. The same decoding config is used for every model in the sweep. so the output is deterministic for a given model, precision and device.
         generate_kwargs = {
@@ -183,31 +194,22 @@ class WhisperTranscriber:
             "return_timestamps": return_timestamps,
         }
 
+        attention_mask = None
+        
         if self.decode_mode == "sequential_long_form":
             attention_mask = inputs.attention_mask.to(self.device)
             generate_kwargs["attention_mask"] = attention_mask
+
+            # TODO: Might need to adjust these
+            generate_kwargs["temperature"] = 0.0
+            generate_kwargs["condition_on_prev_tokens"] = False
+
 
         # Multilingual Whisper models are explicitly constrained to English speech recognition.
         if not self.is_english_only:
             generate_kwargs["language"] = "english"
             generate_kwargs["task"] = "transcribe"
 
-
-        # Time the complete transcription computation, but not file loading or model loading.
-        # RTF = (feature extraction + inference + decoding time)/audio duration not just generation time
-        self._synchronise()
-        t0 = perf_counter()
-
-        # inputs = self.processor(
-        #     audio,
-        #     sampling_rate=SAMPLE_RATE,
-        #     return_tensors="pt",
-        # )
-
-        input_features = inputs.input_features.to(
-            device=self.device,
-            dtype=self.dtype,
-        )
 
         self._synchronise()
         t1 = perf_counter()
@@ -225,6 +227,7 @@ class WhisperTranscriber:
         text = self.processor.batch_decode(
             predicted_ids,
             skip_special_tokens=True,
+            decode_with_timestamps=False,
             clean_up_tokenization_spaces=False,
         )[0].strip()
 
