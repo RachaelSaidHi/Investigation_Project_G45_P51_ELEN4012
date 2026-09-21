@@ -3,10 +3,14 @@ from time import perf_counter
 import torch
 import librosa
 from transformers import (WhisperProcessor, WhisperForConditionalGeneration)
+from typing import Literal
 
 SAMPLE_RATE = 16000
 
-# TODO: Decide whether to use only 30s audio clips or less or along for longer audios to be analysed (then need to do chunking)
+# There are two transcription options considered, short-form and sequential long-form
+DecodeMode = Literal["short_form", "sequential_long_form"]
+
+# With short-form decoding, the audio needs to be 30s or less
 MAX_SINGLE_WINDOW_S = 30
 
 @dataclass(frozen=True)
@@ -22,6 +26,7 @@ class TranscriptionResult:
     decode_s: float             # token ids to text (CPU)
     elapsed_s: float            # sum of the three (how long the full transcription took)
     real_time_factor: float     # elapsed_s / duration_s (below 1.0 is faster than real time)
+    decode_mode: str            # short-form or sequential long-form transcription
 
 
 # TODO: check this with Rachael's manifest because she has a duration_s row (maybe compare the two to make sure they match)
@@ -55,6 +60,7 @@ class WhisperTranscriber:
         model_name: str,
         device: str | None = None,
         use_fp16: bool = True,
+        decode_mode: DecodeMode = "sequential_long_form"
     ):
         """
         Args:
@@ -62,6 +68,11 @@ class WhisperTranscriber:
             device:     "cuda" or "cpu". Detected automatically if not given.
             use_fp16:   half precision on GPU. Can affect the transcript as well as speed, so it must match across the model sweep.
         """
+
+        if decode_mode not in {"short_form", "sequential_long_form"}:
+            raise ValueError("decode_mode must be 'short_form' or 'sequential_long_form'.")
+
+        self.decode_mode = decode_mode
         
         if device is None:
             device = ("cuda" if torch.cuda.is_available() else "cpu")
@@ -99,6 +110,7 @@ class WhisperTranscriber:
             "device": str(self.device),
             "hardware": hardware,
             "precision": str(self.dtype),
+            "decode_mode": self.decode_mode
         }
 
 
@@ -110,7 +122,7 @@ class WhisperTranscriber:
         if self.device.type == "cuda":
             torch.cuda.synchronize(self.device)
 
-    # TODO: decide if only ever using 30s or less audio else have some sort of chunking strategy 
+
     def transcribe(self, filepath: str) -> TranscriptionResult:
         """
         Transcribe one audio file.
@@ -123,27 +135,57 @@ class WhisperTranscriber:
 
         audio, duration_s = load_audio(filepath)
 
-        if duration_s > MAX_SINGLE_WINDOW_S:
-            return TranscriptionResult(
-                        text="",
-                        duration_s=0,
-                        preprocess_s=0,
-                        inference_s=0,
-                        decode_s=0,
-                        elapsed_s=0,
-                        real_time_factor=0,
-                    )
-            # raise ValueError(
-            #     f"Audio is {duration_s:.1f} seconds long. "
-            #     f"Maximum supported duration is {MAX_SINGLE_WINDOW_S:.1f} seconds."
-            # )
+        if self.decode_mode == "short_form":
+            if duration_s > MAX_SINGLE_WINDOW_S:
+                raise ValueError(
+                f"Audio is {duration_s:.1f} seconds long, but short-form Whisper supports at most {MAX_SINGLE_WINDOW_S:.1f} s.\n"
+                f"Use decode_mode = 'sequential_long_form'."
+                )
+            
+            inputs = self.processor(
+                audio,
+                sampling_rate=SAMPLE_RATE,
+                return_tensors="pt",
+            )
 
-        # Greedy decoding with no stochastic sampling. The same decoding policy is used for every model in the sweep. so the output is deterministic for a given model, precision and device.
+            return_timestamps = False
+
+        elif self.decode_mode == "sequential_long_form":
+            inputs = self.processor(
+                audio,
+                sampling_rate=SAMPLE_RATE,
+                return_tensors="pt",
+                truncation=False,
+                return_attention_mask=True,
+            )
+
+            return_timestamps = True
+
+        # if duration_s > MAX_SINGLE_WINDOW_S:
+        #     return TranscriptionResult(
+        #                 text="",
+        #                 duration_s=0,
+        #                 preprocess_s=0,
+        #                 inference_s=0,
+        #                 decode_s=0,
+        #                 elapsed_s=0,
+        #                 real_time_factor=0,
+        #             )
+        #     raise ValueError(
+        #         f"Audio is {duration_s:.1f} seconds long. "
+        #         f"Maximum supported duration is {MAX_SINGLE_WINDOW_S:.1f} seconds."
+        #     )
+
+        # Greedy decoding with no stochastic sampling. The same decoding config is used for every model in the sweep. so the output is deterministic for a given model, precision and device.
         generate_kwargs = {
             "num_beams": 1,
             "do_sample": False,
-            "return_timestamps": False,
+            "return_timestamps": return_timestamps,
         }
+
+        if self.decode_mode == "sequential_long_form":
+            attention_mask = inputs.attention_mask.to(self.device)
+            generate_kwargs["attention_mask"] = attention_mask
 
         # Multilingual Whisper models are explicitly constrained to English speech recognition.
         if not self.is_english_only:
@@ -156,11 +198,11 @@ class WhisperTranscriber:
         self._synchronise()
         t0 = perf_counter()
 
-        inputs = self.processor(
-            audio,
-            sampling_rate=SAMPLE_RATE,
-            return_tensors="pt",
-        )
+        # inputs = self.processor(
+        #     audio,
+        #     sampling_rate=SAMPLE_RATE,
+        #     return_tensors="pt",
+        # )
 
         input_features = inputs.input_features.to(
             device=self.device,
@@ -195,13 +237,14 @@ class WhisperTranscriber:
         elapsed_s = t3 - t0
 
         return TranscriptionResult(
-            text=text,
-            duration_s=float(duration_s),
-            preprocess_s=float(preprocess_s),
-            inference_s=float(inference_s),
-            decode_s=float(decode_s),
-            elapsed_s=float(elapsed_s),
-            real_time_factor=float(elapsed_s / duration_s),
+            text = text,
+            duration_s = float(duration_s),
+            preprocess_s = float(preprocess_s),
+            inference_s = float(inference_s),
+            decode_s = float(decode_s),
+            elapsed_s = float(elapsed_s),
+            real_time_factor = float(elapsed_s / duration_s),
+            decode_mode = self.decode_mode
         )
 
 
