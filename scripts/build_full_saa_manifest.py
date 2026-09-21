@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.load_saa import load_saa
+from src.data.load_saa import load_saa
 from src.data.validation import validate_manifest
 
 

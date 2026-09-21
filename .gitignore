@@ -23,4 +23,7 @@ env/
 
 # Operating system files
 .DS_Store
-Thumbs.db
+Thumbs.db__pycache__
+
+# Experimentation files
+*experiment.py
