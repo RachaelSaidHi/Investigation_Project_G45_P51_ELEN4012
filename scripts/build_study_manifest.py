@@ -57,7 +57,7 @@ def load_full_manifest() -> pd.DataFrame:
     if not FULL_MANIFEST.exists():
         raise FileNotFoundError(
             f"Full manifest not found: {FULL_MANIFEST}\n"
-            "Run 'python -m scripts.build_full_saa_manifest' first."
+            "Run 'python -m scripts.build_full_manifest' first."
         )
 
     return pd.read_csv(FULL_MANIFEST)

@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.data.load_saa import load_saa
+from src.data.load_afrispeech import load_afrispeech
 from src.data.validation import validate_manifest
 
 
@@ -15,9 +16,9 @@ def main() -> None:
     # Each loader returns the same schema.
     manifests = [
         load_saa(DATA_ROOT),
+        load_afrispeech(DATA_ROOT),
 
-        # TODO:
-        # load_afrispeech(DATA_ROOT),
+        # potential TODO:
         # load_edacc(DATA_ROOT),
     ]
 
@@ -38,3 +39,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# run using 
+# python -m scripts.build_full_manifest

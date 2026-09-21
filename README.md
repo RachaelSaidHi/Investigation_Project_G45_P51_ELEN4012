@@ -73,7 +73,7 @@ Run these three scripts in order from the project root:
 
 ```bash
 # Step 1: Build the full SAA manifest (all 2,138 recordings)
-python -m scripts.build_full_saa_manifest
+python -m scripts.build_full_manifest
 
 # Step 2: Filter to the study accent groups and apply adult filter
 python -m scripts.build_study_manifest
