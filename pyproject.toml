@@ -3,4 +3,10 @@ name = "investigation"
 version = "0.1.0"
 
 [tool.setuptools.packages.find]
-include = ["src*"]
+include = ["src*", "scripts*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = [
+    "integration: tests that load and run a real Whisper model",
+]

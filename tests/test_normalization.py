@@ -159,7 +159,7 @@ class TestNormalizeText:
         assert reference == hypothesis == "inflammation of the"
  
     def test_punctuation_is_not_removed_for_other_datasets(self):
-        text, removed = normalize_text("stable comma alert", "speech_accent_archive")
+        text, removed = normalize_text("stable comma alert", "saa")
  
         assert "comma" in text
         assert removed == 0

@@ -5,6 +5,7 @@ import librosa
 from transformers import (WhisperProcessor, WhisperForConditionalGeneration)
 from typing import Literal
 from pathlib import Path
+import numpy as np
 
 # TODO: Make a whisper.yaml that can be used to adjust experimental configs
 
@@ -58,6 +59,10 @@ def load_audio(filepath: str):
 
     if len(audio) == 0:
         raise ValueError("Audio file is empty.")
+
+    if not np.all(np.isfinite(audio)):
+        raise ValueError("Audio contains NaN or infinite samples.")
+
 
     duration_s = len(audio) / SAMPLE_RATE
 
