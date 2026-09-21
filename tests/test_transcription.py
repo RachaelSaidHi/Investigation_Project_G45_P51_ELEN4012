@@ -11,7 +11,9 @@ import torch
 
 import src.asr.transcribe as transcribe_module
 from src.asr.transcribe import (
+    MAX_SINGLE_WINDOW_S,
     SAMPLE_RATE,
+    TranscriptionResult,
     WhisperTranscriber,
     load_audio,
 )
@@ -181,11 +183,7 @@ class TestLoadAudio:
         assert len(loaded_audio) == 2 * SAMPLE_RATE
         assert duration_s == pytest.approx(2.0)
 
-        mock_load.assert_called_once_with(
-            str(audio_file),
-            sr=SAMPLE_RATE,
-            mono=True,
-        )
+        mock_load.assert_called_once_with(str(audio_file), sr=SAMPLE_RATE, mono=True,)
 
     def test_silent_audio_is_allowed(self, tmp_path, monkeypatch):
         audio_file = tmp_path / "silent.wav"
@@ -238,7 +236,7 @@ class TestWhisperTranscriberInit:
                 decode_mode = "something_else",
             )
 
-    def test_cuda_requested_when_unavailable_fails(self, monkeypatch):
+    def test_cuda_requested_when_unavailable_fails(self, whisper_mocks, monkeypatch):
         monkeypatch.setattr(
             torch.cuda,
             "is_available",
@@ -254,7 +252,7 @@ class TestWhisperTranscriberInit:
                 device = "cuda",
             )
 
-    def test_cpu_uses_fp32(self):
+    def test_cpu_uses_fp32(self, whisper_mocks):
         transcriber = WhisperTranscriber(
             model_name = "openai/whisper-small",
             device = "cpu",
@@ -276,8 +274,8 @@ class TestWhisperTranscriberInit:
 
     def test_model_and_processor_loaded_once(self, whisper_mocks):
         WhisperTranscriber(
-            model_name="openai/whisper-small",
-            device="cpu",
+            model_name = "openai/whisper-small",
+            device = "cpu",
         )
 
         whisper_mocks["processor_loader"].assert_called_once_with("openai/whisper-small")
@@ -285,7 +283,7 @@ class TestWhisperTranscriberInit:
 
         assert whisper_mocks["model"].eval_called is True
 
-    def test_describe_contains_configuration(self):
+    def test_describe_contains_configuration(self, whisper_mocks):
         transcriber = WhisperTranscriber(
             model_name="openai/whisper-small",
             device="cpu",
@@ -299,6 +297,226 @@ class TestWhisperTranscriberInit:
         assert description["hardware"] == "CPU"
         assert description["precision"] == ("torch.float32")
         assert description["decode_mode"] == ("sequential_long_form")
+
+
+class TestShortForm:
+
+    def test_short_audio_is_accepted(self, whisper_mocks, monkeypatch):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                20.0,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name = "openai/whisper-small",
+            device = "cpu",
+            decode_mode = "short_form",
+        )
+
+        result = transcriber.transcribe("dummy.wav")
+
+        assert isinstance(result, TranscriptionResult,)
+        assert result.text == "decoded transcript"
+        assert result.duration_s == 20.0
+        assert result.decode_mode == "short_form"
+
+    def test_exactly_30_seconds_is_accepted(self, whisper_mocks, monkeypatch):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                MAX_SINGLE_WINDOW_S,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name="openai/whisper-small",
+            device="cpu",
+            decode_mode="short_form",
+        )
+
+        result = transcriber.transcribe("dummy.wav")
+
+        assert result.duration_s == (MAX_SINGLE_WINDOW_S)
+
+    def test_over_30_seconds_is_rejected(self, whisper_mocks, monkeypatch):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                30.1,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name="openai/whisper-small",
+            device="cpu",
+            decode_mode="short_form",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="short-form Whisper",
+        ):
+            transcriber.transcribe("dummy.wav")
+
+        # inference should never have started for an invalid input.
+        assert (len(whisper_mocks["model"].generate_calls)== 0)
+
+    def test_short_form_generation_arguments(self, whisper_mocks, monkeypatch):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                10.0,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name="openai/whisper-small",
+            device="cpu",
+            decode_mode="short_form",
+        )
+
+        transcriber.transcribe("dummy.wav")
+
+        kwargs = whisper_mocks["model"].generate_calls[0]
+
+        assert kwargs["num_beams"] == 1
+        assert kwargs["do_sample"] is False
+        assert (kwargs["return_timestamps"] is False)
+        assert "attention_mask" not in kwargs
+        assert "condition_on_prev_tokens" not in kwargs
+
+    def test_short_form_does_not_use_long_form_processor_options(self, whisper_mocks, monkeypatch):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                10.0,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name="openai/whisper-small",
+            device="cpu",
+            decode_mode="short_form",
+        )
+
+        transcriber.transcribe("dummy.wav")
+
+        kwargs = whisper_mocks["processor"].processor_calls[0]
+
+        assert "truncation" not in kwargs
+        assert "return_attention_mask" not in kwargs
+
+
+class TestSequentialLongForm:
+
+    def test_long_audio_is_accepted(self, whisper_mocks, monkeypatch):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                70.0,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name="openai/whisper-small",
+            device="cpu",
+            decode_mode="sequential_long_form",
+        )
+
+        result = transcriber.transcribe("dummy.wav")
+
+        assert result.duration_s == 70.0
+        assert result.decode_mode == ("sequential_long_form")
+
+    def test_short_audio_is_also_accepted(self, whisper_mocks, monkeypatch):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                20.0,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name="openai/whisper-small",
+            device="cpu",
+            decode_mode="sequential_long_form",
+        )
+
+        result = transcriber.transcribe("dummy.wav")
+
+        assert result.duration_s == 20.0
+
+    def test_long_form_processor_arguments(self, whisper_mocks, monkeypatch):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                70.0,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name="openai/whisper-small",
+            device="cpu",
+            decode_mode="sequential_long_form",
+        )
+
+        transcriber.transcribe("dummy.wav")
+
+        kwargs = whisper_mocks["processor"].processor_calls[0]
+
+        assert kwargs["truncation"] is False
+        assert (kwargs["return_attention_mask"] is True)
+
+    def test_long_form_generation_arguments(
+        self,
+        whisper_mocks,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            transcribe_module,
+            "load_audio",
+            lambda _: (
+                np.zeros(10, dtype=np.float32),
+                70.0,
+            ),
+        )
+
+        transcriber = WhisperTranscriber(
+            model_name="openai/whisper-small",
+            device="cpu",
+            decode_mode="sequential_long_form",
+        )
+
+        transcriber.transcribe("dummy.wav")
+
+        kwargs = whisper_mocks["model"].generate_calls[0]
+
+        assert kwargs["num_beams"] == 1
+        assert kwargs["do_sample"] is False
+        assert (kwargs["return_timestamps"] is True)
+        assert "attention_mask" in kwargs
+
+        assert (kwargs["condition_on_prev_tokens"] is False)
+        assert kwargs["temperature"] == 0.0
+
 
 
 # run using python -m pytest tests/test_transcription.py -v
