@@ -100,7 +100,7 @@ python -m pytest tests/test_study_manifest.py -v
 
 All tests should pass. If SAA is not installed, the SAA loader tests will skip rather than fail.
 
-## 5. What the manifests contain
+## 6. What the manifests contain
 
 Both `study_manifest.csv` and `dev_manifest.csv` have the same columns. The important ones for the ASR pipeline are:
 
@@ -124,7 +124,7 @@ row = manifest.iloc[0]
 audio_path = DATA_ROOT / row["filepath"]
 ```
 
-## 6. Testing
+## 7. Testing
 
 All tests should be run from the repository root with the virtual environment activated.
 
@@ -228,7 +228,7 @@ $env:RUN_WHISPER_INTEGRATION="1"
 python -m pytest -v
 ```
 
-## Project Repo Structure
+## 8. Project Repo Structure
 ```
 project/
 │
