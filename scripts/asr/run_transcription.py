@@ -3,7 +3,7 @@ Run Whisper transcription over a manifest.
 
 Example:
 
-python -m scripts.run_transcription \
+python -m scripts.asr.run_transcription \
     --manifest data/manifests/dev_manifest.csv \
     --run-name dev_tiny_long \
     --model openai/whisper-tiny \
@@ -22,9 +22,7 @@ import torch
 import transformers
 
 from src.asr.transcribe import WhisperTranscriber
-from src.asr.transcription_pipeline import (
-    run_transcription_manifest,
-)
+from src.asr.transcription_pipeline import (run_transcription_manifest)
 
 
 DEFAULT_DATA_ROOT = Path("data/raw")
