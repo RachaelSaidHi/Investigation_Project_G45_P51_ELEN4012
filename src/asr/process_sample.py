@@ -47,17 +47,14 @@ def process_sample(transcriber: WhisperTranscriber, row) -> dict:
  
     audio_path = resolve_audio_path(row)
  
-    # --- Transcription ------------------------------------------------
-    # The raw transcript is the only artefact here that cannot be cheaply
-    # regenerated, so it is carried through into the record unchanged.
- 
+    # The raw transcript is the only artefact here that cannot be cheaply regenerated, so it is carried through into the record unchanged.
+
     transcription = transcriber.transcribe(str(audio_path))
  
     duration_mismatch = abs(transcription.duration_s - float(row["duration_s"])) > DURATION_TOLERANCE_S
  
-    # --- Normalisation ------------------------------------------------
-    # Both sides go through the same call, which is what guarantees they
-    # are compared under identical rules.
+
+    # Both sides go through the same normalization call, which is what guarantees they are compared under identical rules.
  
     reference_norm, reference_punctuation = normalize_text(
         row["reference_transcript"],
@@ -69,10 +66,8 @@ def process_sample(transcriber: WhisperTranscriber, row) -> dict:
         dataset,
     )
  
-    # --- Scoring ------------------------------------------------------
-    # An empty reference has no defined WER, so it is flagged rather than
-    # scored. This does happen: an AfriSpeech reference consisting only of
-    # punctuation normalises to nothing.
+    # An empty reference has no defined WER, so it is flagged rather than scored. 
+    # This could happen if an AfriSpeech reference consists only of punctuation.
  
     reference_empty = reference_norm.strip() == ""
  
@@ -132,16 +127,14 @@ def build_record(
         "dataset": dataset,
         "status": status,
  
-        # Run configuration. Stored per row so that results from several
-        # models can be stacked in one table and still be told apart.
+        # Run configuration. Stored per row so that results from several models can be stacked in one table and still be told apart.
         "model_name": config["model_name"],
         "device": config["device"],
         "hardware": config["hardware"],
         "precision": config["precision"],
         "decoding": config.get("decoding", "short_form"),
  
-        # The irreplaceable artefact. Everything below it can be recomputed
-        # from this without re-running inference.
+        # The irreplaceable artefact. Everything below it can be recomputed from this without re-running inference.
         "hypothesis_raw": transcription.text,
  
         "reference_norm": reference_norm,
@@ -151,12 +144,11 @@ def build_record(
         # whether Whisper fails to transcribe spoken punctuation for
         # particular accents, which would otherwise inflate WER in a way
         # that correlates with acoustic distance.
+        # TODO: I don't think this is good to have since the reference has no punctuation?
         "n_punctuation_reference": reference_punctuation,
         "n_punctuation_hypothesis": hypothesis_punctuation,
  
-        # Timing. Feature extraction and decoding are CPU work that barely
-        # changes between checkpoints, so they are kept separate from
-        # inference rather than folded into one figure.
+        # Timing results
         "duration_s": transcription.duration_s,
         "preprocess_s": transcription.preprocess_s,
         "inference_s": transcription.inference_s,
@@ -167,8 +159,7 @@ def build_record(
         "duration_mismatch": duration_mismatch,
     }
  
-    # S, D, I and N are stored rather than WER alone, because corpus WER
-    # cannot be reconstructed from per-sample WER values.
+    # S, D, I and N are stored rather than WER alone, because corpus WER cannot be reconstructed from per-sample WER values.
     if scores is None:
         record["wer"] = None
         record["substitutions"] = None
@@ -187,11 +178,8 @@ def build_record(
     return record
 
 
-print("hello")
 manifest = pd.read_csv("data/manifests/dev_manifest.csv")
-print("hello")
 transcriber = WhisperTranscriber("openai/whisper-tiny")
-print("hello")
 
 for _, row in manifest.iterrows():
     record = process_sample(transcriber, row)

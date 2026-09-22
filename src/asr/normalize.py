@@ -82,7 +82,7 @@ def remove_exact_phrases(text, phrases):
     return " ".join(kept_tokens), removed
 
 
-def normalize_text(input_text: str, dataset: str) -> tuple:
+def normalize_text(input_text: str, dataset: str, drop_punctuation_words=True) -> tuple:
     """
     Normalise a reference or hypothesis transcript before computing WER.
     The same function is applied to both the reference and the hypothesis
@@ -116,7 +116,7 @@ def normalize_text(input_text: str, dataset: str) -> tuple:
         raise ValueError("Unknown dataset: " + dataset)
     
     removed = 0
-    if dataset == "afrispeech":
+    if dataset == "afrispeech" and drop_punctuation_words:
          normalized_text, removed = remove_exact_phrases(normalized_text, AFRISPEECH_PUNCTUATION_TERMS)
 
     # Stage 3: remove repeated whitespace
