@@ -1,7 +1,8 @@
 """Build the study manifest from the full manifest.
 
-Selects the accent groups chosen for the investigation, assigns
-the harmonised accent_group label, and applies eligibility filters.
+Dataset-specific selection is handled by the corresponding selection
+modules. This script combines the selected study data and writes the
+resulting manifest.
 
 Run from project root:
     python -m scripts.build_study_manifest
@@ -11,44 +12,15 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.data.select_saa import select_saa_study
+from src.data.validation import validate_manifest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATA_ROOT = PROJECT_ROOT / "data" / "raw"
 FULL_MANIFEST = PROJECT_ROOT / "data" / "manifests" / "full_manifest.csv"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "manifests"
 OUTPUT_PATH = OUTPUT_DIR / "study_manifest.csv"
-
-
-# decrease likelihood of age related confounds
-MIN_AGE = 18
-MAX_AGE = 65
-
-# Accent group definitions: 
-# Each entry maps an accent_group label to a selection rule defined by
-# native_language (and country for american english)
-ACCENT_GROUPS = {
-    "american_english": {
-        "native_language": "english",
-        "country": "usa",
-    },
-    "amharic": {
-        "native_language": "amharic",
-    },
-    "hausa": {
-        "native_language": "hausa",
-    },
-    "kiswahili": {
-        "native_language": "kiswahili",
-    },
-    "tigrigna": {
-        "native_language": "tigrigna",
-    },
-    "yoruba": {
-        "native_language": "yoruba",
-    },
-    "hindi": {
-        "native_language": "hindi",
-    },
-}
 
 
 def load_full_manifest() -> pd.DataFrame:
@@ -63,49 +35,12 @@ def load_full_manifest() -> pd.DataFrame:
     return pd.read_csv(FULL_MANIFEST)
 
 
-def select_accent_groups(manifest: pd.DataFrame) -> pd.DataFrame:
-    """Select SAA rows belonging to the defined accent groups and assign labels."""
-
-    saa = manifest[manifest["dataset"] == "saa"].copy()
-
-    selected = []
-
-    for group_label, rules in ACCENT_GROUPS.items():
-
-        mask = pd.Series(True, index=saa.index) # first assumes every SAA row could belong to this group
-
-        # then applies every rule defined for the group
-        for column, value in rules.items():
-            mask = mask & (saa[column] == value)
-
-        group_df = saa[mask].copy()
-
-        if group_df.empty:
-            raise ValueError(f"No SAA samples found for accent group '{group_label}'.")
-
-        group_df["accent_group"] = group_label
-        selected.append(group_df)
-
-    return pd.concat(selected, ignore_index=True)
-
-
-
-def filter_adults(manifest: pd.DataFrame) -> pd.DataFrame:
-    """Remove speakers under MIN_AGE, over MAX_AGE or with an unknown age."""
-
-    age = pd.to_numeric(manifest["age"], errors="coerce")
-    eligible = (age.notna() & (age >= MIN_AGE) & (age <= MAX_AGE))
-
-    return manifest[eligible].copy()
-
-
-
 def print_summary(manifest: pd.DataFrame) -> None:
     """Print a summary of the final study manifest."""
 
     summary = (
         manifest
-        .groupby("accent_group")
+        .groupby(["dataset", "accent_group"])
         .agg(
             speakers=("speaker_id", "nunique"),
             samples=("sample_id", "count"),
@@ -115,7 +50,6 @@ def print_summary(manifest: pd.DataFrame) -> None:
 
     print("Accent group counts:")
     print(summary.to_string())
-
     print()
 
     print("Sex breakdown by accent group:")
@@ -125,7 +59,6 @@ def print_summary(manifest: pd.DataFrame) -> None:
             manifest["sex"],
         ).to_string()
     )
-
     print()
 
     print("Age summary by accent group:")
@@ -136,27 +69,31 @@ def print_summary(manifest: pd.DataFrame) -> None:
         .to_string()
     )
 
-    print(
-        f"\nTotal samples: {len(manifest)}"
-    )
-
-    print(
-        f"Total speakers: {manifest['speaker_id'].nunique()}\n"
-    )
+    print(f"\nTotal samples: {len(manifest)}")
+    print(f"Total speakers: {manifest['speaker_id'].nunique()}\n")
 
 
 def main() -> None:
     full = load_full_manifest()
 
-    study = select_accent_groups(full)
-    study = filter_adults(study)
+    # Each dataset has its own selection logic because the available
+    # metadata and eligibility rules differ between datasets.
+    selections = [
+        select_saa_study(full),
+
+        # TODO:
+        # select_afrispeech_study(full),
+    ]
+
+    study = pd.concat(selections, ignore_index=True)
+
+    validate_manifest(study, DATA_ROOT)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     study.to_csv(OUTPUT_PATH, index=False)
 
     print(f"Study manifest written to: {OUTPUT_PATH}\n")
     print_summary(study)
-
 
 
 if __name__ == "__main__":

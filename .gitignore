@@ -27,3 +27,6 @@ Thumbs.db__pycache__
 
 # Experimentation files
 *experiment.py
+
+# inspection files
+inspection/

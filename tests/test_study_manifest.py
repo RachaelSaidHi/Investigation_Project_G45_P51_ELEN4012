@@ -3,14 +3,16 @@
 import pandas as pd
 import pytest
 
-from scripts.build_study_manifest import (
+from src.data.select_saa import (
     ACCENT_GROUPS,
-    FULL_MANIFEST,
     MAX_AGE,
     MIN_AGE,
-    filter_adults,
+    _filter_adults,
+    _select_accent_groups,
+)
+from scripts.build_study_manifest import (
+    FULL_MANIFEST,
     load_full_manifest,
-    select_accent_groups,
 )
 from src.data.schema import MANIFEST_COLUMNS
 
@@ -142,7 +144,7 @@ def candidate_manifest():
 class TestAccentGroupSelection:
 
     def test_all_expected_groups_are_selected(self, candidate_manifest):
-        result = select_accent_groups(candidate_manifest)
+        result = _select_accent_groups(candidate_manifest)
 
         assert set(result["accent_group"]) == set(ACCENT_GROUPS.keys())
 
@@ -150,7 +152,7 @@ class TestAccentGroupSelection:
         self,
         candidate_manifest,
     ):
-        result = select_accent_groups(candidate_manifest)
+        result = _select_accent_groups(candidate_manifest)
 
         counts = result["accent_group"].value_counts()
 
@@ -161,7 +163,7 @@ class TestAccentGroupSelection:
         self,
         candidate_manifest,
     ):
-        result = select_accent_groups(candidate_manifest)
+        result = _select_accent_groups(candidate_manifest)
 
         labels = dict(
             zip(
@@ -186,7 +188,7 @@ class TestAccentGroupSelection:
         self,
         candidate_manifest,
     ):
-        result = select_accent_groups(candidate_manifest)
+        result = _select_accent_groups(candidate_manifest)
 
         assert "saa_american" in result["sample_id"].values
         assert "saa_english_uk" not in result["sample_id"].values
@@ -195,7 +197,7 @@ class TestAccentGroupSelection:
         self,
         candidate_manifest,
     ):
-        result = select_accent_groups(candidate_manifest)
+        result = _select_accent_groups(candidate_manifest)
 
         assert "saa_spanish_usa" not in result["sample_id"].values
 
@@ -203,7 +205,7 @@ class TestAccentGroupSelection:
         self,
         candidate_manifest,
     ):
-        result = select_accent_groups(candidate_manifest)
+        result = _select_accent_groups(candidate_manifest)
 
         assert "saa_mandarin" not in result["sample_id"].values
 
@@ -211,7 +213,7 @@ class TestAccentGroupSelection:
         self,
         candidate_manifest,
     ):
-        result = select_accent_groups(candidate_manifest)
+        result = _select_accent_groups(candidate_manifest)
 
         assert "afrispeech_hausa" not in result["sample_id"].values
         assert (result["dataset"] == "saa").all()
@@ -220,7 +222,7 @@ class TestAccentGroupSelection:
         self,
         candidate_manifest,
     ):
-        select_accent_groups(candidate_manifest)
+        _select_accent_groups(candidate_manifest)
 
         assert (candidate_manifest["accent_group"] == "").all()
 
@@ -236,7 +238,7 @@ class TestAccentGroupSelection:
             ValueError,
             match="No SAA samples found for accent group 'yoruba'",
         ):
-            select_accent_groups(manifest)
+            _select_accent_groups(manifest)
 
 
 class TestAdultFilter:
@@ -246,7 +248,7 @@ class TestAdultFilter:
             make_manifest_row(age=30),
         ])
 
-        result = filter_adults(manifest)
+        result = _filter_adults(manifest)
 
         assert len(result) == 1
 
@@ -255,7 +257,7 @@ class TestAdultFilter:
             make_manifest_row(age=MIN_AGE),
         ])
 
-        result = filter_adults(manifest)
+        result = _filter_adults(manifest)
 
         assert len(result) == 1
 
@@ -264,7 +266,7 @@ class TestAdultFilter:
             make_manifest_row(age=MIN_AGE - 1),
         ])
 
-        result = filter_adults(manifest)
+        result = _filter_adults(manifest)
 
         assert len(result) == 0
 
@@ -273,7 +275,7 @@ class TestAdultFilter:
             make_manifest_row(age=MAX_AGE),
         ])
 
-        result = filter_adults(manifest)
+        result = _filter_adults(manifest)
 
         assert len(result) == 1
 
@@ -282,7 +284,7 @@ class TestAdultFilter:
             make_manifest_row(age=MAX_AGE + 1),
         ])
 
-        result = filter_adults(manifest)
+        result = _filter_adults(manifest)
 
         assert len(result) == 0
 
@@ -291,7 +293,7 @@ class TestAdultFilter:
             make_manifest_row(age=None),
         ])
 
-        result = filter_adults(manifest)
+        result = _filter_adults(manifest)
 
         assert len(result) == 0
 
@@ -300,7 +302,7 @@ class TestAdultFilter:
             make_manifest_row(age="unknown"),
         ])
 
-        result = filter_adults(manifest)
+        result = _filter_adults(manifest)
 
         assert len(result) == 0
 
@@ -333,7 +335,7 @@ class TestAdultFilter:
             ),
         ])
 
-        result = filter_adults(manifest)
+        result = _filter_adults(manifest)
         ages = pd.to_numeric(result["age"])
 
         assert set(result["sample_id"]) == {
@@ -356,8 +358,8 @@ def real_study_manifest():
         )
 
     full = load_full_manifest()
-    study = select_accent_groups(full)
-    study = filter_adults(study)
+    study = _select_accent_groups(full)
+    study = _filter_adults(study)
 
     return study
 
