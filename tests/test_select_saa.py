@@ -287,7 +287,7 @@ class TestSelectSAAStudy:
 
 
 # ======================================================================
-# Real-data sanity checks — skip if full manifest is not built
+# Real-data sanity checks — skips if full manifest is not built
 # ======================================================================
 
 
