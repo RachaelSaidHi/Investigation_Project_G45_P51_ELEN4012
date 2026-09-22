@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.data.select_saa import select_saa_study
+from src.data.select_afrispeech import select_afrispeech_study
 from src.data.validation import validate_manifest
 
 
@@ -52,25 +53,70 @@ def print_summary(manifest: pd.DataFrame) -> None:
     print(summary.to_string())
     print()
 
-    print("Sex breakdown by accent group:")
-    print(
-        pd.crosstab(
-            manifest["accent_group"],
-            manifest["sex"],
-        ).to_string()
-    )
-    print()
+    saa = manifest[
+        manifest["dataset"] == "saa"
+    ]
 
-    print("Age summary by accent group:")
-    print(
+    if not saa.empty:
+        print("SAA sex breakdown by accent group:")
+        print(
+            pd.crosstab(
+                saa["accent_group"],
+                saa["sex"],
+            ).to_string()
+        )
+        print()
+
+        print("SAA age summary by accent group:")
+        print(
+            saa
+            .groupby("accent_group")["age"]
+            .agg(["min", "median", "max"])
+            .to_string()
+        )
+        print()
+
+    afrispeech = manifest[
+        manifest["dataset"] == "afrispeech"
+    ]
+
+    if not afrispeech.empty:
+        print("AfriSpeech sex breakdown by accent group:")
+        print(
+            pd.crosstab(
+                afrispeech["accent_group"],
+                afrispeech["sex"],
+            ).to_string()
+        )
+        print()
+
+        print("AfriSpeech age-group breakdown:")
+        print(
+            pd.crosstab(
+                afrispeech["accent_group"],
+                afrispeech["age_group"],
+            ).to_string()
+        )
+        print()
+
+    print("Totals by dataset:")
+    totals = (
         manifest
-        .groupby("accent_group")["age"]
-        .agg(["min", "median", "max"])
-        .to_string()
+        .groupby("dataset")
+        .agg(
+            speakers=("speaker_id", "nunique"),
+            samples=("sample_id", "count"),
+        )
+        .sort_index()
     )
+
+    print(totals.to_string())
 
     print(f"\nTotal samples: {len(manifest)}")
-    print(f"Total speakers: {manifest['speaker_id'].nunique()}\n")
+    print(
+        f"Total speakers: "
+        f"{manifest['speaker_id'].nunique()}\n"
+    )
 
 
 def main() -> None:
@@ -80,9 +126,7 @@ def main() -> None:
     # metadata and eligibility rules differ between datasets.
     selections = [
         select_saa_study(full),
-
-        # TODO:
-        # select_afrispeech_study(full),
+        select_afrispeech_study(full),
     ]
 
     study = pd.concat(selections, ignore_index=True)
@@ -98,3 +142,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# run using: 
+# python -m scripts.build_study_manifest
