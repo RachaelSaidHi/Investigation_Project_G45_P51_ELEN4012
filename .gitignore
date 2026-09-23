@@ -30,3 +30,6 @@ Thumbs.db__pycache__
 
 # inspection files
 inspection/
+
+# old dev manifest 
+build_dev_manifest_without_afrispeech.py

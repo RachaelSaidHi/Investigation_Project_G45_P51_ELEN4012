@@ -26,15 +26,17 @@ def build_dev_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
 
     selected = []
 
-    for accent_group, group_df in manifest.groupby("accent_group"):
+    for (dataset, accent_group), group_df in manifest.groupby(["dataset", "accent_group"]):
 
         for sex in ["female", "male"]:
 
-            candidates = (group_df[group_df["sex"] == sex].sort_values("sample_id"))
+            candidates = (group_df[group_df["sex"] == sex]
+                            .sort_values(["speaker_id", "sample_id"])
+                            .drop_duplicates(subset="speaker_id",keep="first"))
 
             if len(candidates) < SPEAKERS_PER_SEX:
                 warnings.warn(
-                    f"Accent group '{accent_group}' has only "
+                    f"{dataset}/{accent_group} has only "
                     f"{len(candidates)} {sex} speaker(s); "
                     f"requested up to {SPEAKERS_PER_SEX}."
                 )
@@ -43,7 +45,7 @@ def build_dev_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
 
     return (
         pd.concat(selected, ignore_index=True)
-        .sort_values(["accent_group", "sex", "sample_id"])
+        .sort_values(["dataset", "accent_group", "sex", "sample_id"])
         .reset_index(drop=True)
     )
 
@@ -55,7 +57,7 @@ def main() -> None:
             "Run 'python -m scripts.build_study_manifest' first."
         )
 
-    study_manifest = pd.read_csv(STUDY_MANIFEST)
+    study_manifest = pd.read_csv(STUDY_MANIFEST, keep_default_na=False)
 
     dev_manifest = build_dev_manifest(
         study_manifest
@@ -75,9 +77,11 @@ def main() -> None:
         dev_manifest[
             [
                 "sample_id",
+                "dataset",
                 "accent_group",
                 "sex",
                 "age",
+                "age_group",
             ]
         ].to_string(index=False)
     )
