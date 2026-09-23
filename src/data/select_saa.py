@@ -36,6 +36,13 @@ ACCENT_GROUPS = {
     },
 }
 
+# Include only known sexes.
+# Exclude other/NaN etc due to downstream sex-specific analysis.
+STUDY_SEXES = {
+    "male",
+    "female",
+}
+
 
 def _filter_adults(manifest: pd.DataFrame) -> pd.DataFrame:
     """Remove speakers under MIN_AGE, over MAX_AGE, or with unknown age.
@@ -77,11 +84,19 @@ def _select_accent_groups(manifest: pd.DataFrame) -> pd.DataFrame:
 
     return pd.concat(selected, ignore_index=True)
 
+def _filter_known_sex(manifest: pd.DataFrame) -> pd.DataFrame:
+    """Keep samples with known male or female sex metadata."""
+
+    sex = (manifest["sex"].astype("string").str.strip().str.lower())
+    eligible = sex.isin(STUDY_SEXES)
+
+    return manifest[eligible].copy()
 
 def select_saa_study(manifest: pd.DataFrame) -> pd.DataFrame:
     """Build the SAA portion of the study manifest."""
 
     study = _select_accent_groups(manifest)
     study = _filter_adults(study)
+    study = _filter_known_sex(study)
 
     return study

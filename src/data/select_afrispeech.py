@@ -25,6 +25,14 @@ ADULT_AGE_GROUPS = {
     "41-55",
 }
 
+# AfriSpeech allows gender to be marked as other.
+# Include only known sexes.
+# Exclude other/NaN etc due to downstream sex-specific analysis.
+STUDY_SEXES = {
+    "male",
+    "female",
+}
+
 
 def _select_accent_groups(manifest: pd.DataFrame) -> pd.DataFrame:
     """Select the defined AfriSpeech study groups and assign study labels."""
@@ -61,11 +69,20 @@ def _filter_adults(manifest: pd.DataFrame) -> pd.DataFrame:
 
     return manifest[eligible].copy()
 
+def _filter_known_sex(manifest: pd.DataFrame) -> pd.DataFrame:
+    """Keep samples with known male or female sex metadata."""
+
+    sex = (manifest["sex"].astype("string").str.strip().str.lower())
+    eligible = sex.isin(STUDY_SEXES)
+
+    return manifest[eligible].copy()
+
 
 def select_afrispeech_study(manifest: pd.DataFrame) -> pd.DataFrame:
     """Build the AfriSpeech portion of the study manifest."""
 
     study = _select_accent_groups(manifest)
     study = _filter_adults(study)
+    study = _filter_known_sex(study)
 
     return study
