@@ -32,7 +32,7 @@ python -m pip install torch torchvision
 ## 3. Acquire the Speech Accent Archive
 
 
-1. Download the dataset from Kaggle as zip:
+1. Download the dataset from Kaggle as ZIP file:
 https://www.kaggle.com/datasets/rtatman/speech-accent-archive   
 **The dataset requires approximately 920 MB of disk space after extraction**
 
@@ -49,7 +49,7 @@ data/
 data/raw/saa
 ```
 
-4. After extraction, the folder structure is:
+4. After extraction, the folder structure should be:
 
 ```
 data/
@@ -64,18 +64,49 @@ data/
                 ├── ...
                 └── yoruba5.mp3
 ```
-The nested `recordings/recordings/` comes from the original Kaggle structure   
-The `data/` directory is in `.gitignore` and is not committed.
+The nested `recordings/recordings/` comes from the original Kaggle structure.  
+The `data/raw` directory is in `.gitignore` and is not committed.  
 
-## 4. Build the manifests
+
+## 4. Acquire AfriSpeech
+
+AfriSpeech is acquired from the Hugging Face dataset:
+
+```text
+intronhealth/afrispeech-200
+```
+
+Run the acquisition script from the project root:
+
+```bash
+python -m scripts.acquire_afrispeech
+```
+
+The accent and split combinations that will be downloaded are specified in:
+
+```text
+configs/afrispeech_acquisition.json
+```
+
+The script downloads the required transcript metadata and audio and stores them under:
+
+```text
+data/raw/afrispeech/
+```
+
+The directory structure comes from the original AfriSpeech structure.  
+The `data/raw` directory is in `.gitignore` and is not committed.
+
+
+## 5. Build the manifests
 
 Run these three scripts in order from the project root:
 
 ```bash
-# Step 1: Build the full SAA manifest (all 2,138 recordings)
+# Step 1: Build the full manifest from all locally available datasets
 python -m scripts.build_full_manifest
 
-# Step 2: Filter to the study accent groups and apply adult filter
+# Step 2: Apply the study selection rules
 python -m scripts.build_study_manifest
 
 # Step 3: Build the small dev subset for quick iteration
@@ -86,28 +117,40 @@ This produces three files in `data/manifests/`:
 
 | File | Contents | Use |
 |---|---|---|
-| `full_manifest.csv` | Every SAA recording in standardised format | Not used directly — input to the next step |
-| `study_manifest.csv` | ~409 recordings from the 7 selected accent groups | The actual experimental dataset |
-| `dev_manifest.csv` | ~14 recordings, 1 female + 1 male per group | Quick pipeline development and testing |
+| `full_manifest.csv` | All locally available SAA and AfriSpeech samples in the common manifest format | Input to the study-selection step |
+| `study_manifest.csv` | Samples selected for the investigation using the dataset-specific study rules | The actual experimental dataset |
+| `dev_manifest.csv` | Small subset containing up to 1 female and 1 male speaker per dataset/accent group, with one recording per selected speaker | Quick pipeline development and testing |
 
-## 5. Verify
+The full manifest contains all the data available locally, while the study manifest contains only the samples selected for the experiment.
+
+## 6. Verify
 
 ```bash
 python -m pytest -v
 ```
 
-All tests should pass. If SAA is not installed, the SAA loader tests will skip rather than fail.
+All tests should pass.
 
-## 5. What the manifests contain
+Most tests use synthetic data. Real-data sanity checks are skipped if the required local dataset or manifest is not available.
 
-Both `study_manifest.csv` and `dev_manifest.csv` have the same columns. The important ones for the ASR pipeline are:
+## 7. What the manifests contain
 
-- `sample_id` — unique identifier used to key results
+The manifests use the same common schema. Important columns for the ASR and analysis pipeline include:
+
+- `sample_id` — unique identifier for each audio sample
+- `dataset` — source dataset (`saa` or `afrispeech`)
+- `source_split` — original dataset split where applicable
 - `filepath` — path to the audio file relative to `data/raw/`
-- `accent_group` — the experimental accent category
-- `reference_transcript` — the correct transcript for WER computation
-- `sex` — needed later for sex-matched analysis
-- `speaker_id` — one recording per speaker in SAA
+- `speaker_id` — unique speaker identifier within the source dataset
+- `accent_raw` — accent-related label provided by the source dataset
+- `accent_group` — study accent category used for analysis
+- `reference_transcript` — correct transcript for WER computation
+- `sex` — speaker sex metadata
+- `age` — exact age where available
+- `age_group` — age range where available
+- `domain` — speech domain or recording context
+
+SAA contains one recording per speaker. AfriSpeech may contain multiple recordings from the same speaker.
 
 To load audio for a given manifest row:
 
@@ -116,7 +159,11 @@ from pathlib import Path
 import pandas as pd
 
 DATA_ROOT = Path("data/raw")
-manifest = pd.read_csv("data/manifests/study_manifest.csv")
+
+manifest = pd.read_csv(
+    "data/manifests/study_manifest.csv",
+    keep_default_na=False,
+)
 
 row = manifest.iloc[0]
 audio_path = DATA_ROOT / row["filepath"]
