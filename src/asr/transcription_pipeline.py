@@ -219,15 +219,107 @@ def build_error_record(
     }
 
 
+def load_existing_results(results_path: Path) -> pd.DataFrame:
+    """
+    Load an existing transcription checkpoint.
+
+    If no checkpoint exists, return an empty results table.
+    """
+
+    if not results_path.exists():
+        return pd.DataFrame(columns = RESULT_COLUMNS)
+
+    results = pd.read_csv(results_path)
+
+    # Checking the existing results are in the correct format
+    missing = (set(RESULT_COLUMNS)- set(results.columns))
+
+    if missing:
+        raise ValueError(
+            "Existing transcription results are "
+            f"missing columns: {sorted(missing)}"
+        )
+
+    results["sample_id"] = (results["sample_id"].astype(str))
+
+    # There should be no dupkicated sample ids in the existing results
+    duplicated = (results.loc[results["sample_id"].duplicated(), "sample_id"].unique())
+
+    if len(duplicated) > 0:
+        raise ValueError(
+            "Existing transcription results contain "
+            f"duplicate sample IDs: {duplicated.tolist()}"
+        )
+
+    return results[RESULT_COLUMNS]
+
+
+def upsert_result(results: pd.DataFrame, record: dict) -> pd.DataFrame:
+    """
+    Insert or replace one sample result depending on its existance.
+
+    Replacement is needed when retrying a previously failed sample.
+    """
+
+    sample_id = str(record["sample_id"])
+
+    results = results[results["sample_id"].astype(str) != sample_id].copy()
+
+    new_row = pd.DataFrame([
+        {
+            column: record.get(column)
+            for column in RESULT_COLUMNS
+        }
+    ])
+
+    results = pd.concat(
+        [
+            results,
+            new_row,
+        ],
+        ignore_index=True,
+    )
+
+    results = results.sort_values(
+        "manifest_index",
+        kind="stable",
+    ).reset_index(drop=True)
+
+    return results
+
+
+def save_results_atomic(results: pd.DataFrame, results_path: Path) -> None:
+    """
+    Safely save the current transcription checkpoint.
+
+    The new CSV is written to a temporary file first and then replaces the previous checkpoint.
+    """
+
+    results_path.parent.mkdir(parents = True, exist_ok = True)
+
+    temp_path = results_path.with_name(results_path.name + ".tmp")
+
+    results.to_csv(temp_path, index=False, columns=RESULT_COLUMNS)
+
+    os.replace(temp_path, results_path)
+
+    return
+
+
 def run_transcription_manifest(
     manifest: pd.DataFrame,
     transcriber: WhisperTranscriber,
     data_root: Path,
+    results_path: Path,
+    retry_errors: bool = False,
     fail_fast: bool = False,
     duration_tolerance_s: float = DEFAULT_DURATION_TOLERANCE_S,
-    ) -> pd.DataFrame:
+) -> pd.DataFrame:
         """
-        Transcribe an entire manifest.
+        Transcribe an entire manifest with checkpoints and resumability.
+        Successfully transcribed samples already present are skipped.
+        Previously failed samples are skipped by default, but can be retried.
+        Results are saved after every attempted sample.
 
         Args:
             manifest:
@@ -239,6 +331,17 @@ def run_transcription_manifest(
     
             data_root:
                 Root directory to which manifest filepaths are relative.
+
+            results_path:
+                Path to the transcription checkpoint CSV.
+
+            retry_errors:
+                If True, samples previously recorded with status="error" are 
+                attempted again.
+
+            fail_fast:
+                If True, stop after the first transcription error.
+                The error row is saved before stopping.
     
             duration_tolerance_s:
                 Allowed difference between manifest duration and the duration
@@ -255,22 +358,58 @@ def run_transcription_manifest(
     
         config = transcriber.describe()
 
+        results = load_existing_results(results_path)
+
+        manifest_ids = set(manifest["sample_id"])
+        existing_ids = set(results["sample_id"])
+
+        # Checking none of the existing samples are not in the manifest
+        # Could indicate manifest changes or the incorect manifest is being used 
+        unknown_ids = (existing_ids - manifest_ids)
+
+        if unknown_ids:
+            raise ValueError(
+                "Existing results contain samples that are not present in " 
+                f"this manifest: {sorted(unknown_ids)}"
+            )
+
+        successful_ids = set(results.loc[results["status"] == "ok","sample_id"])
+        error_ids = set(results.loc[results["status"] == "error","sample_id"])
+
+
+        # Successful samples are never repeated.
+        # Failed samples are only repeated when explicitly requested.
+        if retry_errors:
+            skipped_ids = successful_ids
+        else:
+            skipped_ids = (successful_ids | error_ids)
+
         total_samples = len(manifest)
 
-        results = []
-    
+        n_successful = len(successful_ids & manifest_ids)
+        n_previous_errors = len(error_ids & manifest_ids)
+        n_to_process = (total_samples - len(skipped_ids & manifest_ids))
     
         print(f"Model: {config['model_name']}")
         print(f"Decode mode: {config['decode_mode']}")
         print(f"Device: {config['device']}")
         print(f"Hardware: {config['hardware']}")
         print(f"Precision: {config['precision']}")
+
         print()
+
         print(f"Manifest samples: {total_samples}")
+        print(f"Already successful: {n_successful}")
+        print(f"Previous errors: {n_previous_errors}")
+        print(f"Samples to process: {n_to_process}")
+
         print()
     
         for manifest_index, (_, row) in enumerate(manifest.iterrows()):
             sample_id = str(row["sample_id"])
+
+            if sample_id in skipped_ids:
+                continue
     
             print(f"[{manifest_index + 1}/{total_samples}] Transcribing {sample_id}...")
     
@@ -304,16 +443,26 @@ def run_transcription_manifest(
     
                 print(f"\tERROR | {type(error).__name__}: {error}")
 
-            results.append(record)
+            # Save results immediately
+            results = upsert_result(results, record)
 
-            if record["status"] == "error" and fail_fast:
-                raise RuntimeError(f"Transcription failed for sample {sample_id}: {record['error_message']}")
+            save_results_atomic(results, results_path)
 
-        results_df = pd.DataFrame(results)
+            # Optionally stop after an error
+            if (record["status"] == "error" and fail_fast):
+                raise RuntimeError(
+                    "Transcription failed for sample "
+                    f"{sample_id}: {record['error_message']}"
+                )
+
+
+        n_ok = int((results["status"]== "ok").sum())
+        n_errors = int((results["status"] == "error").sum())
 
         print()
         print("Transcription run complete.")
-        print(f"Successful: {(results_df['status'] == 'ok').sum()}")
-        print(f"Errors: {(results_df['status'] == 'error').sum()}")
-    
-        return results_df
+        print(f"Successful: {n_ok}")
+        print(f"Errors: {n_errors}")
+        print(f"Results: {results_path}")
+
+        return results
