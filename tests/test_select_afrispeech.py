@@ -9,6 +9,7 @@ from src.data.select_afrispeech import (
     ADULT_AGE_GROUPS,
     AFRISPEECH_GROUPS,
     _filter_adults,
+    _filter_consistent_speaker_sex,
     _select_accent_groups,
     select_afrispeech_study,
 )
@@ -311,6 +312,69 @@ class TestRealAfriSpeechStudy:
         empty = real_afrispeech_study["accent_group"].astype(str).str.strip().eq("")
         assert not empty.any()
 
+    def test_each_speaker_has_one_sex(
+        self,
+        real_afrispeech_study,
+    ):
+        sex_counts = (
+            real_afrispeech_study
+            .groupby("speaker_id")["sex"]
+            .nunique()
+        )
+
+        assert (sex_counts == 1).all()
+        
+
+
+
+class TestConsistentSpeakerSexFilter:
+
+    def test_speaker_with_consistent_sex_is_kept(self):
+        manifest = make_manifest([
+            make_manifest_row(
+                sample_id="afrispeech_1",
+                speaker_id="afrispeech_spk_1",
+                sex="female",
+            ),
+            make_manifest_row(
+                sample_id="afrispeech_2",
+                speaker_id="afrispeech_spk_1",
+                sex="female",
+            ),
+        ])
+
+        result = _filter_consistent_speaker_sex(
+            manifest
+        )
+
+        assert len(result) == 2
+
+    def test_speaker_with_conflicting_sex_is_removed_entirely(self):
+        manifest = make_manifest([
+            make_manifest_row(
+                sample_id="afrispeech_1",
+                speaker_id="afrispeech_spk_1",
+                sex="female",
+            ),
+            make_manifest_row(
+                sample_id="afrispeech_2",
+                speaker_id="afrispeech_spk_1",
+                sex="male",
+            ),
+            make_manifest_row(
+                sample_id="afrispeech_3",
+                speaker_id="afrispeech_spk_2",
+                sex="female",
+            ),
+        ])
+
+        result = _filter_consistent_speaker_sex(
+            manifest
+        )
+
+        assert set(result["sample_id"]) == {
+            "afrispeech_3"
+        }
 
 # run using:
 # python -m pytest tests/test_select_afrispeech.py -v

@@ -77,6 +77,45 @@ def _filter_known_sex(manifest: pd.DataFrame) -> pd.DataFrame:
 
     return manifest[eligible].copy()
 
+def _filter_consistent_speaker_sex(
+    manifest: pd.DataFrame,
+) -> pd.DataFrame:
+    """Remove speakers with conflicting male and female sex labels."""
+
+    # Sex should be a speaker-level property. AfriSpeech contains some
+    # speaker IDs whose recordings are labelled both male and female, so
+    # their sex cannot be determined reliably from the source metadata.
+    sex = (
+        manifest["sex"]
+        .astype("string")
+        .str.strip()
+        .str.lower()
+    )
+
+    known_sex = manifest[
+        sex.isin(STUDY_SEXES)
+    ].copy()
+
+    known_sex["sex"] = sex[
+        sex.isin(STUDY_SEXES)
+    ]
+
+    sex_counts = (
+        known_sex
+        .groupby("speaker_id")["sex"]
+        .nunique()
+    )
+
+    inconsistent_speakers = sex_counts[
+        sex_counts > 1
+    ].index
+
+    return manifest[
+        ~manifest["speaker_id"].isin(
+            inconsistent_speakers
+        )
+    ].copy()
+
 
 def select_afrispeech_study(manifest: pd.DataFrame) -> pd.DataFrame:
     """Build the AfriSpeech portion of the study manifest."""
@@ -84,5 +123,6 @@ def select_afrispeech_study(manifest: pd.DataFrame) -> pd.DataFrame:
     study = _select_accent_groups(manifest)
     study = _filter_adults(study)
     study = _filter_known_sex(study)
+    study = _filter_consistent_speaker_sex(study)
 
     return study
