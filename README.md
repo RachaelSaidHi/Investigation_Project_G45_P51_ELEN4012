@@ -205,7 +205,9 @@ project/
 │   ├── dsp/
 │   └── analysis/
 │
-└── tests/
-    └── .py files
+├── tests/
+│   └── .py files
+│
+└── third_party/                # licenses / references for third party adapted code
 
 ```
