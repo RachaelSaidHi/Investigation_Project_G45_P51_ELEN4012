@@ -279,14 +279,20 @@ def print_summary(
     else:
         # A recording can fail more than one rule. Splitting and exploding
         # the stored reason string allows each failure reason to be counted.
-        reasons = excluded.assign(
-            reason=excluded[
-                "exclude_reason"
-            ].str.split(
-                REASON_SEPARATOR
+        reasons = (
+            excluded.assign(
+                reason=excluded[
+                    "exclude_reason"
+                ].str.split(
+                    REASON_SEPARATOR
+                )
             )
-        ).explode(
-            "reason"
+            .explode(
+                "reason"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
         print(
