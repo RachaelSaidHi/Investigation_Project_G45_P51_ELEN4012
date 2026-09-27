@@ -7,7 +7,7 @@ from src.data.load_afrispeech import load_afrispeech
 from src.data.validation import validate_manifest
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = PROJECT_ROOT / "data" / "raw"
 MANIFEST_DIR = PROJECT_ROOT / "data" / "manifests"
 OUTPUT_PATH = MANIFEST_DIR / "full_manifest.csv"
@@ -41,4 +41,4 @@ if __name__ == "__main__":
     main()
 
 # run using 
-# python -m scripts.build_full_manifest
+# python -m scripts.data.build_full_manifest

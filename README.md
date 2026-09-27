@@ -79,7 +79,7 @@ intronhealth/afrispeech-200
 Run the acquisition script from the project root:
 
 ```bash
-python -m scripts.acquire_afrispeech
+python -m scripts.data.acquire_afrispeech
 ```
 
 The accent and split combinations that will be downloaded are specified in:
@@ -104,13 +104,13 @@ Run these three scripts in order from the project root:
 
 ```bash
 # Step 1: Build the full manifest from all locally available datasets
-python -m scripts.build_full_manifest
+python -m scripts.data.build_full_manifest
 
 # Step 2: Apply the study selection rules
-python -m scripts.build_study_manifest
+python -m scripts.data.build_study_manifest
 
 # Step 3: Build the small dev subset for quick iteration
-python -m scripts.build_dev_manifest
+python -m scripts.data.build_dev_manifest
 ```
 
 This produces three files in `data/manifests/`:
@@ -118,10 +118,10 @@ This produces three files in `data/manifests/`:
 | File | Contents | Use |
 |---|---|---|
 | `full_manifest.csv` | All locally available SAA and AfriSpeech samples in the common manifest format | Input to the study-selection step |
-| `study_manifest.csv` | Samples selected for the investigation using the dataset-specific study rules | The actual experimental dataset |
+| `study_manifest.csv` | Samples selected for the investigation using the dataset-specific study rules | Input to audio preprocessing and quality control |
 | `dev_manifest.csv` | Small subset containing up to 1 female and 1 male speaker per dataset/accent group, with one recording per selected speaker | Quick pipeline development and testing |
 
-The full manifest contains all the data available locally, while the study manifest contains only the samples selected for the experiment.
+The full manifest contains all usable data available locally, while the study manifest contains the samples that meet the metadata-based study selection criteria before audio quality control.
 
 ## 6. Verify
 
@@ -141,6 +141,7 @@ The manifests use the same common schema. Important columns for the ASR and anal
 - `dataset` — source dataset (`saa` or `afrispeech`)
 - `source_split` — original dataset split where applicable
 - `filepath` — path to the audio file relative to `data/raw/`
+- `processed_filepath` — path to the processed audio file; blank until preprocessing has been completed
 - `speaker_id` — unique speaker identifier within the source dataset
 - `accent_raw` — accent-related label provided by the source dataset
 - `accent_group` — study accent category used for analysis
@@ -187,8 +188,10 @@ project/
 │   └── analysis/
 │       └── .py files
 │
-├── scripts/                    # like python notebooks maybe
-│   └── python notebooks
+├── scripts/
+│   ├── asr/ 
+│   ├── data/                   # data acquisition and manifest-building scripts
+│   └── inspection/             # exploratory data/audio inspection scripts
 │
 ├── data/
 │   ├── README.md

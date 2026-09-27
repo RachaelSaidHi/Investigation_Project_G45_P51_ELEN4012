@@ -5,7 +5,7 @@ import pandas as pd
 from data.load_saa import load_saa
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = PROJECT_ROOT / "data" / "raw"
 
 

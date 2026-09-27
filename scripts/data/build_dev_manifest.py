@@ -1,11 +1,11 @@
-"""Build a small development manifest from the SAA study manifest.
+"""Build a small development manifest from the study manifest.
 
 Selects a configurable number of female and male speakers from each
 accent group. The development manifest is intended for pipeline
 development and testing, not for statistical analysis.
 
 Run from project root:
-    python -m scripts.build_dev_manifest
+    python -m scripts.data.build_dev_manifest
 """
 
 from pathlib import Path
@@ -14,7 +14,7 @@ import pandas as pd
 import warnings
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STUDY_MANIFEST = (PROJECT_ROOT / "data" / "manifests" / "study_manifest.csv")
 OUTPUT_PATH = (PROJECT_ROOT / "data" / "manifests" / "dev_manifest.csv")
 
@@ -54,7 +54,7 @@ def main() -> None:
     if not STUDY_MANIFEST.exists():
         raise FileNotFoundError(
             f"Study manifest not found: {STUDY_MANIFEST}\n"
-            "Run 'python -m scripts.build_study_manifest' first."
+            "Run 'python -m scripts.data.build_study_manifest' first."
         )
 
     study_manifest = pd.read_csv(STUDY_MANIFEST, keep_default_na=False)

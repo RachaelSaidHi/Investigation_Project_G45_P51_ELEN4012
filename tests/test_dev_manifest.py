@@ -3,8 +3,8 @@
 import pandas as pd
 import pytest
 
-import scripts.build_dev_manifest as dev_builder
-from scripts.build_dev_manifest import build_dev_manifest
+import scripts.data.build_dev_manifest as dev_builder
+from scripts.data.build_dev_manifest import build_dev_manifest
 from src.data.schema import MANIFEST_COLUMNS
 
 
@@ -17,6 +17,7 @@ def make_manifest_row(**overrides):
         "source_split": "",
         "source_sample_id": "test",
         "filepath": "saa/recordings/test.mp3",
+        "processed_filepath": "",
         "speaker_id": "saa_spk_test",
         "accent_raw": "english",
         "accent_group": "american_english",
@@ -29,7 +30,6 @@ def make_manifest_row(**overrides):
         "age_onset": 0,
         "duration_s": 20.0,
         "original_sample_rate": 44100,
-        "snr_est": "",
         "domain": "read_fixed",
         "reference_transcript": "please call stella",
     }

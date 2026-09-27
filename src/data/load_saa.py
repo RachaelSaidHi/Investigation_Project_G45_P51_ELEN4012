@@ -64,6 +64,7 @@ def load_saa(data_root: Path) -> pd.DataFrame:
             "source_split": "",
             "source_sample_id": source_sample_id,
             "filepath": audio_path.relative_to(data_root).as_posix(),
+            "processed_filepath": "",
             "speaker_id": f"saa_spk_{int(row['speakerid'])}",
             "accent_raw": clean_text(row["native_language"]),
             "accent_group": "",
@@ -76,7 +77,6 @@ def load_saa(data_root: Path) -> pd.DataFrame:
             "age_onset": row["age_onset"],
             "duration_s": audio_info.info.length,
             "original_sample_rate": audio_info.info.sample_rate,
-            "snr_est": "",
             "domain": "read_fixed",
             "reference_transcript": reference_transcript,
         }

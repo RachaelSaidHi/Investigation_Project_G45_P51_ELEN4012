@@ -185,6 +185,7 @@ def _load_one_selection(data_root: Path, metadata_path: Path, audio_dir: Path,) 
             "source_split": _clean_text(row["split"]),
             "source_sample_id": source_sample_id,
             "filepath": relative_path.as_posix(),
+            "processed_filepath": "",
             "speaker_id": f"afrispeech_spk_{source_speaker_id}",
             "accent_raw": _clean_text(row["accent"]),
             "accent_group": "",
@@ -197,7 +198,6 @@ def _load_one_selection(data_root: Path, metadata_path: Path, audio_dir: Path,) 
             "age_onset": "",
             "duration_s": duration_s,
             "original_sample_rate": sample_rate,
-            "snr_est": "",
             "domain": _clean_text(row["domain"]),
             "reference_transcript": _clean_text(row["transcript"]),
         })
@@ -226,13 +226,13 @@ def load_afrispeech(data_root: Path) -> pd.DataFrame:
     if not transcripts_root.exists():
         raise FileNotFoundError(
             f"AfriSpeech transcripts not found at: {transcripts_root}\n"
-            "Run 'python -m scripts.acquire_afrispeech' first."
+            "Run 'python -m scripts.data.acquire_afrispeech' first."
         )
 
     if not audio_root.exists():
         raise FileNotFoundError(
             f"AfriSpeech audio not found at: {audio_root}\n"
-            "Run 'python -m scripts.acquire_afrispeech' first."
+            "Run 'python -m scripts.data.acquire_afrispeech' first."
         )
 
     # Discover all acquired transcript CSVs.

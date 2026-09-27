@@ -5,7 +5,7 @@ modules. This script combines the selected study data and writes the
 resulting manifest.
 
 Run from project root:
-    python -m scripts.build_study_manifest
+    python -m scripts.data.build_study_manifest
 """
 
 from pathlib import Path
@@ -17,7 +17,7 @@ from src.data.select_afrispeech import select_afrispeech_study
 from src.data.validation import validate_manifest
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = PROJECT_ROOT / "data" / "raw"
 FULL_MANIFEST = PROJECT_ROOT / "data" / "manifests" / "full_manifest.csv"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "manifests"
@@ -30,10 +30,10 @@ def load_full_manifest() -> pd.DataFrame:
     if not FULL_MANIFEST.exists():
         raise FileNotFoundError(
             f"Full manifest not found: {FULL_MANIFEST}\n"
-            "Run 'python -m scripts.build_full_manifest' first."
+            "Run 'python -m scripts.data.build_full_manifest' first."
         )
 
-    return pd.read_csv(FULL_MANIFEST)
+    return pd.read_csv(FULL_MANIFEST, keep_default_na=False)
 
 
 def print_summary(manifest: pd.DataFrame) -> None:
@@ -55,9 +55,13 @@ def print_summary(manifest: pd.DataFrame) -> None:
 
     saa = manifest[
         manifest["dataset"] == "saa"
-    ]
+    ].copy()
 
     if not saa.empty:
+        saa["age"] = pd.to_numeric(
+            saa["age"],
+            errors="raise",
+        )
         print("SAA sex breakdown by accent group:")
         print(
             pd.crosstab(
@@ -144,4 +148,4 @@ if __name__ == "__main__":
     main()
 
 # run using: 
-# python -m scripts.build_study_manifest
+# python -m scripts.data.build_study_manifest

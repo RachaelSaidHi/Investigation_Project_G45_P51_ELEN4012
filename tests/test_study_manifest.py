@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-import scripts.build_study_manifest as study_builder
+import scripts.data.build_study_manifest as study_builder
 from src.data.schema import MANIFEST_COLUMNS
 
 
@@ -16,6 +16,7 @@ def make_manifest_row():
         "source_split": "",
         "source_sample_id": "test",
         "filepath": "saa/recordings/test.mp3",
+        "processed_filepath": "",
         "speaker_id": "saa_spk_test",
         "accent_raw": "english",
         "accent_group": "",
@@ -28,7 +29,6 @@ def make_manifest_row():
         "age_onset": 0,
         "duration_s": 20.0,
         "original_sample_rate": 44100,
-        "snr_est": "",
         "domain": "read_fixed",
         "reference_transcript": "please call stella",
     }

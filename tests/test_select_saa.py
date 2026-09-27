@@ -29,6 +29,7 @@ def make_manifest_row(**overrides):
         "source_split": "",
         "source_sample_id": "test",
         "filepath": "saa/recordings/test.mp3",
+        "processed_filepath": "",
         "speaker_id": "saa_spk_test",
         "accent_raw": "english",
         "accent_group": "",
@@ -41,7 +42,6 @@ def make_manifest_row(**overrides):
         "age_onset": 0,
         "duration_s": 20.0,
         "original_sample_rate": 44100,
-        "snr_est": "",
         "domain": "read_fixed",
         "reference_transcript": "please call stella",
     }
@@ -298,7 +298,7 @@ def real_saa_study():
     if not FULL_MANIFEST.exists():
         pytest.skip("Full manifest has not been built")
 
-    full = pd.read_csv(FULL_MANIFEST)
+    full = pd.read_csv(FULL_MANIFEST, keep_default_na=False)
     return select_saa_study(full)
 
 

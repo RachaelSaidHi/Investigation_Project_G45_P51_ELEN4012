@@ -28,6 +28,7 @@ def make_manifest_row(**overrides):
         "source_split": "test",
         "source_sample_id": "test",
         "filepath": "afrispeech/audio/test.wav",
+        "processed_filepath": "",
         "speaker_id": "afrispeech_spk_test",
         "accent_raw": "hausa",
         "accent_group": "",
@@ -40,7 +41,6 @@ def make_manifest_row(**overrides):
         "age_onset": "",
         "duration_s": 5.0,
         "original_sample_rate": 44100,
-        "snr_est": "",
         "domain": "general",
         "reference_transcript": "test transcript",
     }

@@ -291,7 +291,7 @@ class TestColumnMapping:
         assert row["birthplace"] == ""
         assert row["age"] == ""
         assert row["age_onset"] == ""
-        assert row["snr_est"] == ""
+        assert row["processed_filepath"] == ""
 
     def test_missing_age_group_becomes_blank(self, afrispeech_data):
         """The second synthetic row has age_group=None."""

@@ -10,7 +10,7 @@ from huggingface_hub import HfApi, hf_hub_download
 
 DATASET_ID = "intronhealth/afrispeech-200"
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 CONFIG_PATH = (
     PROJECT_ROOT

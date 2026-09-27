@@ -4,6 +4,7 @@ MANIFEST_COLUMNS = [
     "source_split",
     "source_sample_id",
     "filepath",
+    "processed_filepath",
     "speaker_id",
     "accent_raw",
     "accent_group",
@@ -16,7 +17,6 @@ MANIFEST_COLUMNS = [
     "age_onset",
     "duration_s",
     "original_sample_rate",
-    "snr_est",
     "domain",
     "reference_transcript",
 ]
