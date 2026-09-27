@@ -1,6 +1,9 @@
 # raw datasets
 data/raw/
 
+# processed datasets
+data/processed/
+
 # generated manifests
 data/manifests/
 
