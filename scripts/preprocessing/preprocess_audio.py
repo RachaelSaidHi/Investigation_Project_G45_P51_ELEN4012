@@ -14,10 +14,8 @@ Run from project root:
     python -m scripts.preprocessing.preprocess_audio --manifest data/manifests/study_manifest.csv --overwrite
 
 Run options:
-- With no arguments, the development manifest is used. This is intended
-  for a small end-to-end pipeline check before processing the full study data.
-- Supplying --manifest allows a specific manifest to be processed, such as
-  study_manifest.csv for the full preprocessing run.
+- With no arguments, the study manifest is used.
+- Supplying --manifest allows a different manifest to be processed.
 - Existing processed WAV files are reused by default. Supplying --overwrite
   regenerates them from the raw audio and should be used if the audio
   preprocessing method itself has changed.
@@ -45,13 +43,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_ROOT = PROJECT_ROOT / "data" / "raw"
 PROCESSED_ROOT = PROJECT_ROOT / "data" / "processed"
 
-# The development manifest is the safe default so that running the script
-# without arguments does not accidentally start the full study preprocessing.
+# The study manifest is the default input for preprocessing and QC.
 DEFAULT_MANIFEST = (
     PROJECT_ROOT
     / "data"
     / "manifests"
-    / "dev_manifest.csv"
+    / "study_manifest.csv"
 )
 
 # Processed paths are stored relative to data/processed rather than as
@@ -456,7 +453,7 @@ def main() -> None:
         default=DEFAULT_MANIFEST,
         help=(
             "Manifest to preprocess. "
-            "Defaults to data/manifests/dev_manifest.csv."
+            "Defaults to data/manifests/study_manifest.csv."
         ),
     )
 
@@ -574,5 +571,5 @@ if __name__ == "__main__":
 
 # run using:
 # python -m scripts.preprocessing.preprocess_audio
-# python -m scripts.preprocessing.preprocess_audio --manifest data/manifests/study_manifest.csv
-# python -m scripts.preprocessing.preprocess_audio --manifest data/manifests/study_manifest.csv --overwrite
+# python -m scripts.preprocessing.preprocess_audio --manifest data/manifests/dev_manifest.csv
+# python -m scripts.preprocessing.preprocess_audio --overwrite

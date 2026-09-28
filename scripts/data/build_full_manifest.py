@@ -28,9 +28,6 @@ def main() -> None:
     manifests = [
         load_saa(DATA_ROOT),
         load_afrispeech(DATA_ROOT),
-
-        # potential TODO:
-        # load_edacc(DATA_ROOT),
     ]
 
     full_manifest = pd.concat(manifests, ignore_index=True,)
