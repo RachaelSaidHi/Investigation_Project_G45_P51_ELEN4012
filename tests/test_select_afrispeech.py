@@ -76,6 +76,13 @@ def candidate_manifest():
             source_split="test",
             age_group="26-40",
         ),
+        make_manifest_row(
+            sample_id="afrispeech_swahili",
+            speaker_id="afrispeech_spk_7",
+            accent_raw="swahili",
+            source_split="test",
+            age_group="19-25",
+        ),
 
         # Matching accent and split, but under 18.
         make_manifest_row(
@@ -146,6 +153,7 @@ class TestAccentGroupSelection:
             "afrispeech_yoruba",
             "afrispeech_hausa_minor",
             "afrispeech_yoruba_unknown_age",
+            "afrispeech_swahili",
         }
 
     def test_accent_group_labels_are_assigned_correctly(self, candidate_manifest):
@@ -157,6 +165,10 @@ class TestAccentGroupSelection:
 
         assert (
             result.loc[result["accent_raw"] == "yoruba", "accent_group"] == "yoruba"
+        ).all()
+
+        assert (
+            result.loc[result["accent_raw"] == "swahili", "accent_group"] == "kiswahili"
         ).all()
 
     def test_wrong_splits_are_excluded(self, candidate_manifest):
@@ -262,9 +274,10 @@ class TestSelectAfriSpeechStudy:
         assert set(result["sample_id"]) == {
             "afrispeech_hausa",
             "afrispeech_yoruba",
+            "afrispeech_swahili",
         }
 
-        assert set(result["accent_group"]) == {"hausa", "yoruba"}
+        assert set(result["accent_group"]) == {"hausa", "yoruba", "kiswahili"}
         assert set(result["age_group"]).issubset(ADULT_AGE_GROUPS)
 
 

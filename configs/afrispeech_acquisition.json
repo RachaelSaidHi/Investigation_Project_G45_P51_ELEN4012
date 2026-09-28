@@ -18,6 +18,12 @@
             "splits": [
                 "test"
             ]
+        },
+        {
+            "accent": "swahili",
+            "splits": [
+                "test"
+            ]
         }
     ]
 }

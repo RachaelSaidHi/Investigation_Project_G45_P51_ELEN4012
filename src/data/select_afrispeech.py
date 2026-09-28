@@ -14,6 +14,10 @@ AFRISPEECH_GROUPS = {
         "accent_raw": "yoruba",
         "source_split": "test",
     },
+    "kiswahili": {
+        "accent_raw": "swahili",
+        "source_split": "test",
+    },
 }
 
 # AfriSpeech provides age ranges rather than exact ages.

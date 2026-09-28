@@ -259,3 +259,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# run using
+# python -m scripts.inspection.inspect_audio 
