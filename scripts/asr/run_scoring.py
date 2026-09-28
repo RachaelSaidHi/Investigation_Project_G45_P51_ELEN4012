@@ -12,15 +12,13 @@ import json
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
+from importlib.metadata import version
 
 import jiwer
 import pandas as pd
 
-from src.asr.scoring_pipeline import (
-    run_scoring,
-    DEFAULT_NORMALIZER_MODEL,
-    DEFAULT_NORMALIZER_REVISION
-)
+from src.asr.scoring_pipeline import (run_scoring)
+from src.asr.normalize import (describe_normalizer)
 
 
 DEFAULT_OUTPUT_NAME = "scored.csv"
@@ -75,15 +73,15 @@ def build_scoring_config(manifest_path: Path, transcriptions_path: Path) -> dict
         "manifest_path": str(manifest_path.resolve()),
         "transcriptions_path": str(transcriptions_path.resolve()),
 
-        "normalization": {
-            "model_name": DEFAULT_NORMALIZER_MODEL,
-            "revision": DEFAULT_NORMALIZER_REVISION,
-        },
+        "normalization": (
+            describe_normalizer()
+        ),
 
         "software": {
             "python": platform.python_version(),
             "pandas": pd.__version__,
-            "jiwer": jiwer_version,
+            "jiwer": version("jiwer"),
+            "transformers": version("transformers"),
         },
 
         "scored_at_utc": datetime.now(timezone.utc).isoformat(),

@@ -62,6 +62,17 @@ def get_tokenizer(
     )
 
 
+def describe_normalizer() -> dict:
+    """
+    Return the fixed normalization configuration used for scoring.
+    """
+
+    return {
+        "model_name": DEFAULT_NORMALIZER_MODEL,
+        "revision": DEFAULT_NORMALIZER_REVISION,
+    }
+
+
 def remove_duplicate_whitespace(text: str) -> str:
     """
     Removes repeated and leading/trailing whitespace
