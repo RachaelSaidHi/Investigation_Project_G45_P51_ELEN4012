@@ -1,3 +1,16 @@
+"""Exploratory inspection of the AfriSpeech repository on Hugging Face.
+
+Summarises the repository structure (accent-specific and combined transcript
+CSVs and audio archives), checks that each accent/split has both metadata
+and audio, and checks three sample metadata files for a consistent schema,
+missing values and valid audio paths. Also reports the size of the small
+Afemai test split used to trial the acquisition. Used to design the
+acquisition script and loader; not part of the pipeline.
+
+Run from project root:
+    python -m scripts.inspection.inspect_afrispeech
+"""
+
 from collections import Counter
 
 import pandas as pd

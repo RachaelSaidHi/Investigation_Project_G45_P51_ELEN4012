@@ -1,4 +1,4 @@
-"""Build a small development manifest from the study manifest.
+"""Build a small development manifest from the analysis manifest.
 
 Selects a configurable number of female and male speakers from each
 accent group. The development manifest is intended for pipeline

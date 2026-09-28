@@ -1,3 +1,14 @@
+"""Build the full manifest from all locally available datasets.
+
+Runs the SAA and AfriSpeech loaders, combines their output in the common
+manifest schema, validates it and writes data/manifests/full_manifest.csv.
+No study selection is applied: the full manifest records all usable data
+currently on disk.
+
+Run from project root:
+    python -m scripts.data.build_full_manifest
+"""
+
 from pathlib import Path
 
 import pandas as pd

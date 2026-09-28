@@ -1,4 +1,11 @@
-"""SAA-specific study sample selection."""
+"""SAA-specific study sample selection.
+
+Selects the accent groups defined in ACCENT_GROUPS using native language as
+the accent label, with American English additionally restricted to speakers
+from the USA, and assigns their accent_group labels. Keeps speakers with a
+known age between MIN_AGE and MAX_AGE and a male or female sex label. Raises
+an error if any defined group has no recordings.
+"""
 
 import pandas as pd
 

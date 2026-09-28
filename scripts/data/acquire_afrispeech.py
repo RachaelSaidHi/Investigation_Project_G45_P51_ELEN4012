@@ -1,3 +1,22 @@
+"""Download selected AfriSpeech accent/split combinations from Hugging Face.
+
+The accents, splits and dataset revision are read from
+configs/afrispeech_acquisition.json. The revision is resolved to a single
+commit so that every file comes from the same dataset snapshot.
+
+For each selection, the transcript CSV and audio archives are downloaded to
+data/raw/afrispeech/, the audio is extracted, and the number of WAV files is
+checked against the number of metadata rows. Complete selections are skipped
+and incomplete ones are re-acquired; --force re-downloads everything.
+
+Acquisition does not decide which recordings enter the study. That is done
+by the study selection step.
+
+Run from project root:
+    python -m scripts.data.acquire_afrispeech
+    python -m scripts.data.acquire_afrispeech --force
+"""
+
 import argparse
 import json
 import shutil

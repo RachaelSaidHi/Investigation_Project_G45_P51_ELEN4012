@@ -1,3 +1,17 @@
+"""Load the Speech Accent Archive into the common manifest schema.
+
+Reads speakers_all.csv and the reading passage from data/raw/saa/ and
+creates one manifest row per recording marked as available whose MP3 exists
+on disk. Two recordings listed as available but absent from the Kaggle
+release (KNOWN_MISSING_FILES) are skipped; any other missing file raises an
+error.
+
+Every row shares the same reference transcript (the fixed reading passage)
+and the domain "read_fixed". Duration and sample rate are read from each MP3
+header. No study selection is applied, so accent_group and
+processed_filepath are left blank.
+"""
+
 from pathlib import Path
 from mutagen.mp3 import MP3
 

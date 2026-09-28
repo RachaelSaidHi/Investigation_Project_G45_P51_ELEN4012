@@ -1,10 +1,17 @@
-"""AfriSpeech-specific study sample selection."""
+"""AfriSpeech-specific study sample selection.
+
+Selects test-split recordings for the accent groups defined in
+AFRISPEECH_GROUPS and assigns their accent_group labels; AfriSpeech's
+"swahili" is labelled "kiswahili" to match SAA. Keeps recordings in the
+known adult age bands with a male or female sex label, and removes source
+user IDs whose recordings are labelled both male and female. Raises an
+error if any defined group has no recordings.
+"""
 
 import pandas as pd
 
 
-# Provisional AfriSpeech study groups.
-# Update after the Level 1 SAA analysis when the external-validation accents are finalised.
+# AfriSpeech study groups, chosen to match SAA accent groups
 AFRISPEECH_GROUPS = {
     "hausa": {
         "accent_raw": "hausa",
