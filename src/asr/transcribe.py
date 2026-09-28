@@ -33,8 +33,7 @@ class TranscriptionResult:
     decode_mode: DecodeMode     # short-form or sequential long-form transcription
 
 
-# TODO: check this with Rachael's manifest because she has a duration_s row (maybe compare the two to make sure they match)
-# resampling belongs in preprocessing, so this will eventually take already-prepared audio.
+# TODO: resampling belongs in preprocessing, so this will eventually take already-prepared audio.
 def load_audio(filepath: str):
     """
     Load an audio file as mono 16 kHz audio and return it with its duration
