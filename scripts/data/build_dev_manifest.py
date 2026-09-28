@@ -15,7 +15,7 @@ import warnings
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-STUDY_MANIFEST = (PROJECT_ROOT / "data" / "manifests" / "study_manifest.csv")
+ANALYSIS_MANIFEST = (PROJECT_ROOT / "data" / "manifests" / "analysis_manifest.csv")
 OUTPUT_PATH = (PROJECT_ROOT / "data" / "manifests" / "dev_manifest.csv")
 
 SPEAKERS_PER_SEX = 1
@@ -23,6 +23,9 @@ SPEAKERS_PER_SEX = 1
 
 def build_dev_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
     """Select a balanced development sample from each accent group."""
+
+    if manifest.empty:
+        raise ValueError("Analysis manifest is empty.")
 
     selected = []
 
@@ -38,7 +41,8 @@ def build_dev_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
                 warnings.warn(
                     f"{dataset}/{accent_group} has only "
                     f"{len(candidates)} {sex} speaker(s); "
-                    f"requested up to {SPEAKERS_PER_SEX}."
+                    f"requested up to {SPEAKERS_PER_SEX}.",
+                    stacklevel=2,
                 )
 
             selected.append(candidates.head(SPEAKERS_PER_SEX))
@@ -51,16 +55,31 @@ def build_dev_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
-    if not STUDY_MANIFEST.exists():
+    if not ANALYSIS_MANIFEST.exists():
         raise FileNotFoundError(
-            f"Study manifest not found: {STUDY_MANIFEST}\n"
-            "Run 'python -m scripts.data.build_study_manifest' first."
+            f"Analysis manifest not found: {ANALYSIS_MANIFEST}\n"
+            "Run 'python -m scripts.data.build_analysis_manifest' first."
         )
 
-    study_manifest = pd.read_csv(STUDY_MANIFEST, keep_default_na=False)
+    analysis_manifest = pd.read_csv(ANALYSIS_MANIFEST, keep_default_na=False)
+
+    if "processed_filepath" not in analysis_manifest.columns:
+            raise ValueError(
+                "Analysis manifest is missing processed_filepath."
+            )
+    
+    if analysis_manifest["processed_filepath"].astype(str).str.strip().eq("").any():
+        raise ValueError(
+            "Analysis manifest contains missing processed filepaths."
+        )
 
     dev_manifest = build_dev_manifest(
-        study_manifest
+        analysis_manifest
+    )
+
+    OUTPUT_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
     dev_manifest.to_csv(
@@ -82,6 +101,7 @@ def main() -> None:
                 "sex",
                 "age",
                 "age_group",
+                "processed_filepath",
             ]
         ].to_string(index=False)
     )
@@ -93,3 +113,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# run using:
+# python -m scripts.data.build_dev_manifest

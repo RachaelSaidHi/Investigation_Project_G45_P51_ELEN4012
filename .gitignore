@@ -38,3 +38,4 @@ scripts/inspection/results
 # old dev manifest 
 build_dev_manifest_without_afrispeech.py
 test_dev_manifest_without_afrispeech.py
+test_dev_manifest_old_from_study_manifest.py
