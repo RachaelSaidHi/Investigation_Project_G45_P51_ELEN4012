@@ -16,7 +16,11 @@ from pathlib import Path
 import jiwer
 import pandas as pd
 
-from src.asr.scoring_pipeline import (run_scoring)
+from src.asr.scoring_pipeline import (
+    run_scoring,
+    DEFAULT_NORMALIZER_MODEL,
+    DEFAULT_NORMALIZER_REVISION
+)
 
 
 DEFAULT_OUTPUT_NAME = "scored.csv"
@@ -70,6 +74,11 @@ def build_scoring_config(manifest_path: Path, transcriptions_path: Path) -> dict
     return {
         "manifest_path": str(manifest_path.resolve()),
         "transcriptions_path": str(transcriptions_path.resolve()),
+
+        "normalization": {
+            "model_name": DEFAULT_NORMALIZER_MODEL,
+            "revision": DEFAULT_NORMALIZER_REVISION,
+        },
 
         "software": {
             "python": platform.python_version(),

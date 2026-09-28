@@ -1,10 +1,14 @@
 from transformers import WhisperTokenizer
+from functools import lru_cache
 
 # TODO: Test that all models normalise the same way to validate why it doesnt really matter which is chosen
-DEFAULT_NORMALIZER = "openai/whisper-small"
+# The built-in tokenizer from a Hugging Face transformer processor is used opposed to a standalone package like whisper_normalizer
+# This is because the models are already downloaded for the transcription pipeline so the processor can be tapped into without installing separate utilities
+DEFAULT_NORMALIZER_MODEL = "openai/whisper-small"
+DEFAULT_NORMALIZER_REVISION = "973afd24965f72e36ca33b3055d56a652f456b4d"
 
 # runs once when the module is first imported instead of being loaded every time the normalize_text gets called
-tokenizer = WhisperTokenizer.from_pretrained(DEFAULT_NORMALIZER)
+tokenizer = WhisperTokenizer.from_pretrained(DEFAULT_NORMALIZER_MODEL)
 
 
 # Speakers for Afrispeech were told to speak punctuation in full which are removed during normalisation
@@ -28,6 +32,34 @@ AFRISPEECH_PUNCTUATION_TERMS = (
     "query"
     # "new line", "next line" may be needed
 )
+
+
+
+# Cache loaded tokenizers by model name and revision.
+# @lru_cache stores the tokenizer returned for each unique combination of
+# model_name and revision, so requesting the same tokenizer again does not
+# reload it from disk.
+
+# This allows different Whisper normalizers to be tested efficiently without
+# introducing a separate normalizer class. A class is unnecessary here because
+# normalization has little state and is much less computationally expensive
+# than Whisper transcription
+
+@lru_cache(maxsize=None)
+def get_tokenizer(
+    model_name: str = DEFAULT_NORMALIZER_MODEL,
+    revision: str | None = DEFAULT_NORMALIZER_REVISION,
+) -> WhisperTokenizer:
+    """
+    Load and cache a Whisper tokenizer.
+
+    Each unique model/revision combination is loaded only once.
+    """
+
+    return WhisperTokenizer.from_pretrained(
+        model_name,
+        revision=revision,
+    )
 
 
 def remove_duplicate_whitespace(text: str) -> str:
@@ -82,7 +114,12 @@ def remove_exact_phrases(text, phrases):
     return " ".join(kept_tokens), removed
 
 
-def normalize_text(input_text: str, dataset: str, drop_punctuation_words=True) -> tuple:
+def normalize_text(
+    input_text: str, 
+    dataset: str, 
+    drop_punctuation_words = True,
+    tokenizer: WhisperTokenizer | None = None
+    ) -> tuple[str, int]:
     """
     Normalise a reference or hypothesis transcript before computing WER.
     The same function is applied to both the reference and the hypothesis
@@ -105,6 +142,9 @@ def normalize_text(input_text: str, dataset: str, drop_punctuation_words=True) -
         raise ValueError(
             "Cannot normalize None text."
         )
+
+    if tokenizer is None:
+        tokenizer = get_tokenizer()
 
     # Stage 1: normalise text using Whisper's tokenizer
     normalized_text = tokenizer.normalize(input_text)
