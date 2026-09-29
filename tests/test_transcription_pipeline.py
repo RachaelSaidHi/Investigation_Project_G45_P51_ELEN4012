@@ -244,3 +244,143 @@ class TestGetManifestDuration:
 
         assert result == 12.5
         assert isinstance(result, float)
+
+
+class TestBuildSuccessRecord:
+
+    def test_success_record_contains_transcription_and_configuration(self, transcriber_config):
+        row = pd.Series(
+            {
+                "sample_id": "sample_1",
+                "dataset": "saa",
+                "filepath": "sample.wav",
+                "duration_s": 10.0,
+            }
+        )
+
+        transcription = make_transcription_result(
+            text="hello world",
+            duration_s=10.0,
+        )
+
+        record = transcription_pipeline.build_success_record(
+            row=row,
+            manifest_index=3,
+            transcription=transcription,
+            config=transcriber_config,
+            duration_tolerance_s=0.5,
+        )
+
+        assert record["sample_id"] == "sample_1"
+        assert record["dataset"] == "saa"
+        assert record["manifest_index"] == 3
+        assert record["status"] == "ok"
+        assert record["error_type"] == None
+        assert record["error_message"] == None
+        assert record["transcription_raw"] == "hello world"
+        assert record["model_name"] == "openai/whisper-tiny"
+        assert record["decode_mode"] == "sequential_long_form"
+        assert record["processed_duration_s"] == pytest.approx(10.0)
+        assert record["duration_difference_s"] == pytest.approx(0.0)
+        assert record["duration_mismatch"] is False
+
+    def test_exact_duration_tolerance_is_not_a_mismatch(self, transcriber_config):
+        row = pd.Series(
+            {
+                "sample_id": "sample_1",
+                "dataset": "saa",
+                "filepath": "sample.wav",
+                "duration_s": 10.0,
+            }
+        )
+
+        transcription = make_transcription_result(duration_s=10.5)
+
+        record = transcription_pipeline.build_success_record(
+            row=row,
+            manifest_index=0,
+            transcription=transcription,
+            config=transcriber_config,
+            duration_tolerance_s=0.5,
+        )
+
+        assert record["duration_difference_s"] == pytest.approx(0.5)
+        assert record["duration_mismatch"] is False
+
+    def test_duration_above_tolerance_is_a_mismatch(self, transcriber_config):
+        row = pd.Series(
+            {
+                "sample_id": "sample_1",
+                "dataset": "saa",
+                "filepath": "sample.wav",
+                "duration_s": 10.0,
+            }
+        )
+
+        transcription = make_transcription_result(duration_s=10.6)
+
+        record = transcription_pipeline.build_success_record(
+            row=row,
+            manifest_index=0,
+            transcription=transcription,
+            config=transcriber_config,
+            duration_tolerance_s=0.5,
+        )
+
+        assert record["duration_difference_s"] == pytest.approx(0.6)
+        assert record["duration_mismatch"] is True
+
+    def test_missing_manifest_duration_leaves_duration_diagnostics_empty(self, transcriber_config):
+        row = pd.Series(
+            {
+                "sample_id": "sample_1",
+                "dataset": "saa",
+                "filepath": "sample.wav",
+            }
+        )
+
+        record = transcription_pipeline.build_success_record(
+            row=row,
+            manifest_index=0,
+            transcription=make_transcription_result(),
+            config=transcriber_config,
+            duration_tolerance_s=0.5,
+        )
+
+        assert record["manifest_duration_s"] is None
+        assert record["duration_difference_s"] is None
+        assert record["duration_mismatch"] is None
+
+
+class TestBuildErrorRecord:
+
+    def test_error_record_stores_exception_details(self, transcriber_config):
+        row = pd.Series(
+            {
+                "sample_id": "sample_1",
+                "dataset": "saa",
+                "filepath": "sample.wav",
+                "duration_s": 10.0,
+            }
+        )
+
+        record = transcription_pipeline.build_error_record(
+            row=row,
+            manifest_index=2,
+            config=transcriber_config,
+            error=ValueError("broken sample"),
+        )
+
+        assert record["sample_id"] == "sample_1"
+        assert record["dataset"] == "saa"
+        assert record["manifest_index"] == 2
+        assert record["status"] == "error"
+        assert record["error_type"] == "ValueError"
+        assert record["error_message"] == "broken sample"
+        assert record["model_name"] == "openai/whisper-tiny"
+        assert record["decode_mode"] == "sequential_long_form"
+        assert record["transcription_raw"] is None
+        assert record["manifest_duration_s"] == pytest.approx(10.0)
+        assert record["processed_duration_s"] is None
+        assert record["duration_difference_s"] == None
+        assert record["duration_mismatch"] is None
