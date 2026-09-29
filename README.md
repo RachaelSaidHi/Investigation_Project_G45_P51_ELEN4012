@@ -34,7 +34,7 @@ python -m pip install torch torchvision
 
 1. Download the dataset from Kaggle as ZIP file:
 https://www.kaggle.com/datasets/rtatman/speech-accent-archive   
-**The dataset requires approximately 920 MB of disk space after extraction**
+**Note: The dataset requires approximately 920 MB of disk space after extraction**
 
 2. In the project repository, create the following directory structure if it does not already exist:
 
@@ -81,6 +81,7 @@ Run the acquisition script from the project root:
 ```bash
 python -m scripts.data.acquire_afrispeech
 ```
+**Note: The dataset requires approximately 2.15 GB of disk space after extraction**
 
 The accent and split combinations that will be downloaded are specified in:
 
