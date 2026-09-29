@@ -219,11 +219,23 @@ The current test suite covers:
 
 | Test file | Purpose |
 | --- | --- |
+| `test_afrispeech_loader.py` | AfriSpeech dataset loading |
+| `test_analysis_manifest.py` | Analysis-manifest generation and validation |
 | `test_dev_manifest.py` | Development-manifest generation |
 | `test_metrics.py` | WER calculation and substitution/deletion/insertion counts |
 | `test_normalization.py` | Transcript normalization |
+| `test_preprocessing_audio.py` | Audio preprocessing functionality |
+| `test_preprocessing_exclusion.py` | Preprocessing exclusion rules and excluded-sample handling |
+| `test_preprocessing_quality.py` | Audio quality checks used during preprocessing |
+| `test_run_scoring.py` | Scoring CLI/run orchestration, configuration and output-file handling |
+| `test_run_transcription.py` | Transcription CLI/run orchestration, experiment configuration and resume validation |
 | `test_saa_loader.py` | Speech Accent Archive loading |
+| `test_scoring_pipeline.py` | Scoring-pipeline validation, normalization/WER orchestration, statuses and error handling |
+| `test_select_afrispeech.py` | Selection and filtering of AfriSpeech samples |
+| `test_select_analysis.py` | Selection of samples for the analysis dataset |
+| `test_select_saa.py` | Selection and filtering of Speech Accent Archive samples |
 | `test_study_manifest.py` | Study-manifest generation |
+| `test_transcription_pipeline.py` | Manifest-level transcription, checkpointing, resume/retry behaviour and error handling |
 | `test_transcription.py` | Whisper transcription, short-form/long-form decoding, timing, configuration and edge cases |
 | `test_validation.py` | Dataset/manifest validation |
 
