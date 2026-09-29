@@ -275,3 +275,336 @@ class TestBuildErrorRecord:
         assert record["scoring_error_message"] == "normalization failed"
         assert record["wer"] is None
 
+
+class TestScoreSample:
+
+    def test_reference_and_hypothesis_are_normalized_and_scored(self, monkeypatch):
+        normalization_calls = []
+
+        def fake_normalize(text, dataset):
+            normalization_calls.append((text, dataset))
+
+            if text == "THIS IS REFERENCE RAW":
+                return "this is reference normalized", 0
+
+            return "this is hypothesis normalized", 0
+
+        metric_calls = []
+
+        def fake_compute_wer(reference, hypothesis):
+            metric_calls.append((reference, hypothesis))
+            return make_wer_result()
+
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "normalize_text",
+            fake_normalize,
+        )
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "compute_wer",
+            fake_compute_wer,
+        )
+
+        row = pd.Series(
+            {
+                "sample_id": "sample_1",
+                "dataset": "afrispeech",
+                "reference_transcript": "THIS IS REFERENCE RAW",
+                "transcription_raw": "THIS IS HYPOTHESIS RAW",
+                "model_name": "openai/whisper-tiny",
+                "decode_mode": "sequential_long_form",
+                "status": "ok",
+            }
+        )
+
+        result = scoring_pipeline.score_sample(row)
+
+        assert normalization_calls == [
+            ("THIS IS REFERENCE RAW", "afrispeech"),
+            ("THIS IS HYPOTHESIS RAW", "afrispeech"),
+        ]
+        assert metric_calls == [
+            ("this is reference normalized", "this is hypothesis normalized")
+        ]
+
+        assert result["reference_norm"] == "this is reference normalized"
+        assert result["hypothesis_norm"] == "this is hypothesis normalized"
+        assert result["scoring_status"] == "ok"
+        assert result["wer"] == pytest.approx(0.25)
+        assert result["substitutions"] == 1
+        assert result["n_reference_words"] == 4
+
+    def test_empty_normalized_reference_does_not_compute_wer(self, monkeypatch):
+        def fake_normalize(text, dataset):
+            if text == "REFERENCE RAW":
+                return "", 0
+
+            return "some hypothesis", 0
+
+        def should_not_be_called(*args, **kwargs):
+            pytest.fail("compute_wer should not be called for an empty reference")
+
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "normalize_text",
+            fake_normalize,
+        )
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "compute_wer",
+            should_not_be_called,
+        )
+
+        row = pd.Series(
+            {
+                "sample_id": "sample_1",
+                "dataset": "afrispeech",
+                "reference_transcript": "REFERENCE RAW",
+                "transcription_raw": "HYPOTHESIS RAW",
+                "model_name": "openai/whisper-tiny",
+                "decode_mode": "sequential_long_form",
+                "status": "ok",
+            }
+        )
+
+        result = scoring_pipeline.score_sample(row)
+
+        assert result["scoring_status"] == "empty_reference"
+        assert result["wer"] is None
+        assert result["substitutions"] is None
+        assert result["deletions"] is None
+        assert result["insertions"] is None
+        assert result["hits"] is None
+        assert result["n_reference_words"] is None
+
+
+class TestRunScoring:
+
+    def test_ok_error_and_pending_samples_are_routed_correctly(self, monkeypatch):
+        manifest = make_manifest(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "dataset": "saa",
+
+                    "reference_transcript": "one",
+                },
+                {
+                    "sample_id": "sample_2",
+                    "dataset": "saa",
+                    "reference_transcript": "two",
+                },
+                {
+                    "sample_id": "sample_3",
+                    "dataset": "saa",
+                    "reference_transcript": "three",
+                },
+            ]
+        )
+
+        transcriptions = make_transcriptions(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "status": "ok",
+                    "transcription_raw": "one",
+                    "model_name": "whisper",
+                    "decode_mode": "sequential_long_form",
+                },
+                {
+                    "sample_id": "sample_2",
+                    "status": "error",
+                    "transcription_raw": None,
+                    "model_name": "whisper",
+                    "decode_mode": "sequential_long_form",
+                },
+            ]
+        )
+
+        def fake_score_sample(row):
+            return {
+                "sample_id": str(row["sample_id"]),
+                "dataset": row["dataset"],
+                "model_name": row["model_name"],
+                "decode_mode": row["decode_mode"],
+                "transcription_status": row["status"],
+                "scoring_status": "ok",
+                "scoring_error_type": None,
+                "scoring_error_message": None,
+                "reference_norm": "one",
+                "hypothesis_norm": "one",
+                "n_punctuation_reference": 0,
+                "n_punctuation_hypothesis": 0,
+                "wer": 0.0,
+                "substitutions": 0,
+                "deletions": 0,
+                "insertions": 0,
+                "hits": 1,
+                "n_reference_words": 1,
+                "scored_at_utc": "2026-01-01T00:00:00+00:00",
+            }
+
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "score_sample",
+            fake_score_sample,
+        )
+
+        results = scoring_pipeline.run_scoring(manifest, transcriptions)
+        results = results.set_index("sample_id")
+
+        assert results.loc["sample_1", "scoring_status"] == "ok"
+        assert (results.loc["sample_2", "scoring_status"] == "transcription_error")
+        assert (results.loc["sample_3", "scoring_status"]== "pending_transcription")
+
+    def test_manifest_metadata_is_source_of_truth(self, monkeypatch):
+        manifest = make_manifest(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "dataset": "afrispeech",
+                    "reference_transcript": "hello",
+                    "filepath": "correct/path.wav",
+                }
+            ]
+        )
+
+        transcriptions = make_transcriptions(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "dataset": "WRONG_DATASET",
+                    "filepath": "wrong/path.wav",
+                    "status": "ok",
+                    "transcription_raw": "hello",
+                    "model_name": "whisper",
+                    "decode_mode": "sequential_long_form",
+                }
+            ]
+        )
+
+        datasets_seen = []
+
+        def fake_normalize(text, dataset):
+            datasets_seen.append(dataset)
+            return text, 0
+
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "normalize_text",
+            fake_normalize,
+        )
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "compute_wer",
+            lambda reference, hypothesis: make_wer_result(
+                wer=0.0,
+                substitutions=0,
+                deletions=0,
+                insertions=0,
+                hits=1,
+                n_reference_words=1,
+            ),
+        )
+
+        results = scoring_pipeline.run_scoring(manifest, transcriptions)
+
+        assert results.iloc[0]["dataset"] == "afrispeech"
+        assert datasets_seen == ["afrispeech", "afrispeech"]
+
+    def test_unknown_transcription_sample_id_fails(self):
+        manifest = make_manifest()
+
+        transcriptions = make_transcriptions(
+            [
+                {
+                    "sample_id": "unknown_sample",
+                    "status": "ok",
+                    "transcription_raw": "hello",
+                    "model_name": "whisper",
+                    "decode_mode": "sequential_long_form",
+                }
+            ]
+        )
+
+        with pytest.raises(ValueError, match="not present in the manifest"):
+            scoring_pipeline.run_scoring(manifest, transcriptions)
+
+    def test_scoring_exception_is_recorded_when_not_fail_fast(self, monkeypatch):
+        manifest = make_manifest()
+        transcriptions = make_transcriptions()
+
+        def fail(_row):
+            raise ValueError("fake scoring problem")
+
+        monkeypatch.setattr(scoring_pipeline, "score_sample", fail)
+
+        results = scoring_pipeline.run_scoring(
+            manifest,
+            transcriptions,
+            fail_fast=False,
+        )
+
+        row = results.iloc[0]
+
+        assert row["scoring_status"] == "scoring_error"
+        assert row["scoring_error_type"] == "ValueError"
+        assert row["scoring_error_message"] == "fake scoring problem"
+        assert pd.isna(row["wer"])
+
+    def test_fail_fast_raises_on_scoring_exception(self, monkeypatch):
+        manifest = make_manifest()
+        transcriptions = make_transcriptions()
+
+        def fail(_row):
+            raise ValueError("fake scoring problem")
+
+        monkeypatch.setattr(scoring_pipeline, "score_sample", fail)
+
+        with pytest.raises(RuntimeError, match="Scoring failed for sample sample_1"):
+            scoring_pipeline.run_scoring(
+                manifest,
+                transcriptions,
+                fail_fast=True,
+            )
+
+    def test_result_columns_and_manifest_order_are_preserved(self, monkeypatch):
+        manifest = make_manifest(
+            [
+                {
+                    "sample_id": "sample_b",
+                    "dataset": "saa",
+                    "reference_transcript": "b",
+                },
+                {
+                    "sample_id": "sample_a",
+                    "dataset": "saa",
+                    "reference_transcript": "a",
+                },
+            ]
+        )
+
+        transcriptions = make_transcriptions(
+            [
+                {
+                    "sample_id": "sample_a",
+                    "status": "error",
+                    "transcription_raw": None,
+                    "model_name": "whisper",
+                    "decode_mode": "sequential_long_form",
+                },
+                {
+                    "sample_id": "sample_b",
+                    "status": "error",
+                    "transcription_raw": None,
+                    "model_name": "whisper",
+                    "decode_mode": "sequential_long_form",
+                },
+            ]
+        )
+
+        results = scoring_pipeline.run_scoring(manifest, transcriptions)
+
+        assert list(results.columns) == scoring_pipeline.RESULT_COLUMNS
+        assert results["sample_id"].tolist() == ["sample_b", "sample_a"]
