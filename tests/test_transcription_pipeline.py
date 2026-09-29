@@ -514,3 +514,378 @@ class TestSaveResultsAtomic:
 
         loaded = pd.read_csv(path)
         assert loaded.iloc[0]["sample_id"] == "sample_1"
+
+
+class TestRunTranscriptionManifest:
+
+    def test_successful_sample_is_transcribed_and_checkpointed(
+        self,
+        tmp_path,
+        make_audio_file,
+        make_transcriber,
+    ):
+        data_root, _ = make_audio_file("sample.wav")
+        results_path = tmp_path / "results" / "transcriptions.csv"
+
+        manifest = pd.DataFrame(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "dataset": "saa",
+                    "filepath": "sample.wav",
+                    "duration_s": 10.0,
+                }
+            ]
+        )
+
+        transcriber = make_transcriber(
+            result=make_transcription_result(
+                text="hello world",
+                duration_s=10.0,
+            )
+        )
+
+        results = transcription_pipeline.run_transcription_manifest(
+            manifest=manifest,
+            transcriber=transcriber,
+            data_root=data_root,
+            results_path=results_path,
+        )
+
+        assert len(transcriber.calls) == 1
+        assert transcriber.calls[0] == str(data_root / "sample.wav")
+        assert len(results) == 1
+        assert results.iloc[0]["status"] == "ok"
+        assert results.iloc[0]["transcription_raw"] == "hello world"
+        assert results_path.exists()
+
+    def test_successful_sample_is_skipped_when_resuming(
+        self,
+        tmp_path,
+        make_audio_file,
+        make_transcriber,
+    ):
+        data_root, _ = make_audio_file("sample.wav")
+        results_path = tmp_path / "transcriptions.csv"
+
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1", 
+                "filepath": "sample.wav"
+            }
+        ])
+
+        first_transcriber = make_transcriber()
+
+        transcription_pipeline.run_transcription_manifest(
+            manifest,
+            first_transcriber,
+            data_root,
+            results_path,
+        )
+
+        assert len(first_transcriber.calls) == 1
+
+        second_transcriber = make_transcriber()
+
+        results = transcription_pipeline.run_transcription_manifest(
+            manifest,
+            second_transcriber,
+            data_root,
+            results_path,
+        )
+
+        assert second_transcriber.calls == []
+        assert results.iloc[0]["status"] == "ok"
+
+    def test_transcription_error_is_saved(self, tmp_path, make_audio_file, make_transcriber):
+        data_root, _ = make_audio_file("sample.wav")
+        results_path = tmp_path / "transcriptions.csv"
+
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1", 
+                "filepath": "sample.wav"
+            }
+        ])
+
+        failing_transcriber = make_transcriber(
+            error=ValueError("bad audio")
+        )
+
+        results = transcription_pipeline.run_transcription_manifest(
+            manifest,
+            failing_transcriber,
+            data_root,
+            results_path,
+        )
+
+        assert results.iloc[0]["status"] == "error"
+        assert results.iloc[0]["error_type"] == "ValueError"
+        assert results.iloc[0]["error_message"] == "bad audio"
+
+        saved = pd.read_csv(results_path)
+        assert saved.iloc[0]["status"] == "error"
+
+    def test_missing_audio_becomes_error_record(self, tmp_path, make_transcriber):
+        data_root = tmp_path / "raw"
+        data_root.mkdir()
+
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1", 
+                "filepath": "sample.wav"
+            }
+        ])
+
+        results_path = tmp_path / "transcriptions.csv"
+        transcriber = make_transcriber()
+
+        results = transcription_pipeline.run_transcription_manifest(
+            manifest,
+            transcriber,
+            data_root,
+            results_path,
+        )
+
+        assert transcriber.calls == []
+        assert results.iloc[0]["status"] == "error"
+        assert results.iloc[0]["error_type"] == "FileNotFoundError"
+
+    def test_previous_error_is_not_retried_by_default(
+        self,
+        tmp_path,
+        make_audio_file,
+        make_transcriber,
+    ):
+        data_root, _ = make_audio_file("sample.wav")
+        results_path = tmp_path / "transcriptions.csv"
+
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1", 
+                "filepath": "sample.wav"
+            }
+        ])
+
+        failing_transcriber = make_transcriber(
+            error=RuntimeError("first failure")
+        )
+
+        transcription_pipeline.run_transcription_manifest(
+            manifest,
+            failing_transcriber,
+            data_root,
+            results_path,
+        )
+
+        working_transcriber = make_transcriber()
+
+        results = transcription_pipeline.run_transcription_manifest(
+            manifest,
+            working_transcriber,
+            data_root,
+            results_path,
+            retry_errors=False,
+        )
+
+        assert len(failing_transcriber.calls) == 1
+        assert working_transcriber.calls == []
+        assert results.iloc[0]["status"] == "error"
+        assert results.iloc[0]["error_type"] == "RuntimeError"
+        assert results.iloc[0]["error_message"] == "first failure"
+
+    def test_previous_error_is_retried_when_requested(
+        self,
+        tmp_path,
+        make_audio_file,
+        make_transcriber,
+    ):
+        data_root, _ = make_audio_file("sample.wav")
+        results_path = tmp_path / "transcriptions.csv"
+
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1", 
+                "filepath": "sample.wav"
+            }
+        ])
+
+        failing_transcriber = make_transcriber(
+            error=RuntimeError("first failure")
+        )
+        
+        transcription_pipeline.run_transcription_manifest(
+            manifest,
+            failing_transcriber,
+            data_root,
+            results_path,
+        )
+
+        retry_transcriber = make_transcriber(
+            result=make_transcription_result(text="retry worked")
+        )
+
+        results = transcription_pipeline.run_transcription_manifest(
+            manifest,
+            retry_transcriber,
+            data_root,
+            results_path,
+            retry_errors=True,
+        )
+
+        assert len(failing_transcriber.calls) == 1
+        assert len(retry_transcriber.calls) == 1
+        assert results.iloc[0]["status"] == "ok"
+        assert results.iloc[0]["error_type"] == None
+        assert results.iloc[0]["error_message"] == None
+        assert results.iloc[0]["transcription_raw"] == "retry worked"
+
+    def test_fail_fast_saves_error_before_raising(
+        self,
+        tmp_path,
+        make_audio_file,
+        make_transcriber,
+    ):
+        data_root, _ = make_audio_file("sample.wav")
+        results_path = tmp_path / "transcriptions.csv"
+
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1", 
+                "filepath": "sample.wav"
+            }
+        ])
+
+        failing_transcriber = make_transcriber(
+            error=ValueError("broken sample")
+        )
+
+        with pytest.raises(RuntimeError, match="Transcription failed for sample"):
+            transcription_pipeline.run_transcription_manifest(
+                manifest,
+                failing_transcriber,
+                data_root,
+                results_path,
+                fail_fast=True,
+            )
+
+        assert results_path.exists()
+
+        saved = pd.read_csv(results_path)
+        assert saved.iloc[0]["status"] == "error"
+        assert saved.iloc[0]["error_type"] == "ValueError"
+
+    def test_existing_result_not_in_manifest_fails(
+        self,
+        tmp_path,
+        make_audio_file,
+        make_transcriber,
+    ):
+        data_root, _ = make_audio_file("sample.wav")
+        results_path = tmp_path / "transcriptions.csv"
+
+        existing = pd.DataFrame(
+            [make_existing_record("unknown_sample", 0)],
+            columns=transcription_pipeline.RESULT_COLUMNS,
+        )
+        existing.to_csv(results_path, index=False)
+
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1", 
+                "filepath": "sample.wav"
+            }
+        ])
+
+        with pytest.raises(ValueError, match="not present in this manifest"):
+            transcription_pipeline.run_transcription_manifest(
+                manifest,
+                make_transcriber(),
+                data_root,
+                results_path,
+            )
+
+    def test_manifest_order_is_preserved_in_results(
+        self,
+        tmp_path,
+        make_audio_file,
+        make_transcriber,
+    ):
+        data_root, _ = make_audio_file("a.wav")
+        make_audio_file("b.wav")
+
+        manifest = pd.DataFrame(
+            [
+                {"sample_id": "sample_a", "filepath": "a.wav"},
+                {"sample_id": "sample_b", "filepath": "b.wav"},
+            ]
+        )
+
+        results = transcription_pipeline.run_transcription_manifest(
+            manifest,
+            make_transcriber(),
+            data_root,
+            tmp_path / "transcriptions.csv",
+        )
+
+        assert results["sample_id"].tolist() == ["sample_a", "sample_b"]
+        assert results["manifest_index"].tolist() == [0, 1]
+
+    def test_without_fail_fast_continues_after_error(
+        self,
+        tmp_path,
+        make_transcriber,
+    ):
+        data_root = tmp_path / "raw"
+        data_root.mkdir()
+
+        (data_root / "bad.wav").write_bytes(b"fake")
+        (data_root / "good.wav").write_bytes(b"fake")
+
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1",
+                "filepath": "bad.wav",
+                "dataset": "saa",
+            },
+            {
+                "sample_id": "sample_2",
+                "filepath": "good.wav",
+                "dataset": "saa",
+            },
+        ])
+
+        transcriber = make_transcriber()
+
+        def fake_transcribe(filepath):
+            transcriber.calls.append(filepath)
+
+            if filepath.endswith("bad.wav"):
+                raise RuntimeError("fake failure")
+
+            return make_transcription_result(
+                text="successful transcript"
+            )
+
+        transcriber.transcribe = fake_transcribe
+
+        results_path = tmp_path / "transcriptions.csv"
+
+        results = transcription_pipeline.run_transcription_manifest(
+            manifest=manifest,
+            transcriber=transcriber,
+            data_root=data_root,
+            results_path=results_path,
+            fail_fast=False,
+        )
+
+        assert len(transcriber.calls) == 2
+
+        results = results.set_index("sample_id")
+
+        assert results.loc["sample_1", "status"] == "error"
+        assert results.loc["sample_1", "error_type"] == "RuntimeError"
+        assert (results.loc["sample_1", "error_message"] == "fake failure")
+        assert results.loc["sample_2", "status"] == "ok"
+        assert (results.loc["sample_2", "transcription_raw"] == "successful transcript")
