@@ -125,8 +125,8 @@ class TestFileSha256:
         path.write_bytes(contents)
         first_hash = run_transcription.file_sha256(path)
 
-        contents = b"2,b.wav\n"
-        path.write_bytes(contents)
+        second_contents = b"sample_id,filepath\n2,b.wav\n"
+        path.write_bytes(second_contents)
         second_hash = run_transcription.file_sha256(path)
 
         assert first_hash != second_hash
@@ -216,9 +216,282 @@ class TestValidateResumeConfig:
         with pytest.raises(ValueError, match=expected_name):
             run_transcription.validate_resume_config(previous, current)
 
+    def test_multiple_mismatches_are_all_reported(self):
+        previous = make_run_config()
+        current = copy.deepcopy(previous)
+        
+        current["whisper"]["model_name"] = "openai/whisper-large"
+        current["software"]["torch"] = "99.test"
+
+        with pytest.raises(ValueError) as excinfo:
+            run_transcription.validate_resume_config(previous, current)
+            
+        error_msg = str(excinfo.value)
+        assert "model_name:" in error_msg
+        assert "torch:" in error_msg
+        assert "Cannot resume this run because its configuration has changed" in error_msg
+
     def test_created_at_time_is_not_part_of_resume_comparison(self):
         previous = make_run_config()
         current = copy.deepcopy(previous)
         current["created_at_utc"] = "2099-01-01T00:00:00+00:00"
 
         run_transcription.validate_resume_config(previous, current)
+
+class TestPrepareRunDirectory:
+
+    def test_new_run_creates_config_and_manifest_snapshot(self, tmp_path):
+        run_dir = tmp_path / "runs" / "test_run"
+        manifest_path = tmp_path / "manifest.csv"
+        manifest_path.write_text(
+            "sample_id,filepath\nsample_1,a.wav\n",
+            encoding="utf-8",
+        )
+
+        config = make_run_config()
+
+        snapshot = run_transcription.prepare_run_directory(
+            run_dir=run_dir,
+            manifest_path=manifest_path,
+            run_config=config,
+        )
+
+        assert run_dir.exists()
+        assert snapshot == run_dir / "manifest_snapshot.csv"
+        assert snapshot.read_text(encoding="utf-8") == manifest_path.read_text(encoding="utf-8")
+
+        with open(run_dir / "run_config.json", encoding="utf-8") as file:
+            saved_config = json.load(file)
+
+        assert saved_config == config
+
+    def test_existing_valid_run_is_resumed_without_replacing_snapshot(self, tmp_path):
+        run_dir = tmp_path / "run"
+        manifest_path = tmp_path / "manifest.csv"
+        manifest_path.write_text("original manifest", encoding="utf-8")
+
+        config = make_run_config()
+
+        snapshot = run_transcription.prepare_run_directory(
+            run_dir,
+            manifest_path,
+            config,
+        )
+
+        manifest_path.write_text("changed source manifest", encoding="utf-8")
+
+        resumed_snapshot = run_transcription.prepare_run_directory(
+            run_dir,
+            manifest_path,
+            copy.deepcopy(config),
+        )
+
+        assert resumed_snapshot == snapshot
+        assert snapshot.read_text(encoding="utf-8") == "original manifest"
+
+    def test_existing_run_without_config_fails(self, tmp_path):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "manifest_snapshot.csv").write_text(
+            "sample_id,filepath\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(FileNotFoundError, match="run_config.json"):
+            run_transcription.prepare_run_directory(
+                run_dir,
+                tmp_path / "manifest.csv",
+                make_run_config(),
+            )
+
+    def test_existing_run_without_manifest_snapshot_fails(self, tmp_path):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+
+        with open(run_dir / "run_config.json", "w", encoding="utf-8") as file:
+            json.dump(make_run_config(), file)
+
+        with pytest.raises(FileNotFoundError, match="manifest_snapshot.csv"):
+            run_transcription.prepare_run_directory(
+                run_dir,
+                tmp_path / "manifest.csv",
+                make_run_config(),
+            )
+
+    def test_existing_run_with_changed_config_fails(self, tmp_path):
+        run_dir = tmp_path / "run"
+        manifest_path = tmp_path / "manifest.csv"
+        manifest_path.write_text("sample_id,filepath\n", encoding="utf-8")
+
+        previous = make_run_config()
+        run_transcription.prepare_run_directory(run_dir, manifest_path, previous)
+
+        current = copy.deepcopy(previous)
+        current["whisper"]["model_name"] = "openai/whisper-base"
+
+        with pytest.raises(ValueError, match="model_name"):
+            run_transcription.prepare_run_directory(
+                run_dir,
+                manifest_path,
+                current,
+            )
+
+
+class TestMain:
+
+    def test_missing_manifest_fails_before_loading_whisper(self, tmp_path, monkeypatch):
+        transcriber_loader = Mock()
+        monkeypatch.setattr(run_transcription, "WhisperTranscriber", transcriber_loader)
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "run_transcription.py",
+                "--manifest", str(tmp_path / "missing.csv"),
+                "--run-name", "test_run",
+                "--model", "openai/whisper-tiny"
+            ],
+        )
+
+        with pytest.raises(FileNotFoundError, match="Manifest does not exist"):
+            run_transcription.main()
+
+        transcriber_loader.assert_not_called()
+
+    def test_manifest_directory_fails(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "run_transcription.py",
+                "--manifest", str(tmp_path),
+                "--run-name", "test_run",
+                "--model", "openai/whisper-tiny"
+            ],
+        )
+
+        with pytest.raises(ValueError, match="Manifest path is not a file"):
+            run_transcription.main()
+
+    def test_main_creates_run_and_calls_pipeline_with_snapshot(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        manifest_path = tmp_path / "manifest.csv"
+        pd.DataFrame(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "filepath": "sample.wav",
+                }
+            ]
+        ).to_csv(manifest_path, index=False)
+
+        data_root = tmp_path / "data" / "raw"
+        results_root = tmp_path / "results" / "asr" / "runs"
+
+        dummy_transcriber = DummyTranscriber()
+        transcriber_loader = Mock(return_value=dummy_transcriber)
+        pipeline_mock = Mock(return_value=pd.DataFrame())
+
+        monkeypatch.setattr(
+            run_transcription,
+            "WhisperTranscriber",
+            transcriber_loader,
+        )
+        monkeypatch.setattr(
+            run_transcription,
+            "run_transcription_manifest",
+            pipeline_mock,
+        )
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "run_transcription.py",
+                "--manifest", str(manifest_path),
+                "--run-name", "test_run",
+                "--model", "openai/whisper-tiny",
+                "--device", "cpu",
+                "--data-root", str(data_root),
+                "--results-root", str(results_root),
+                "--retry-errors",
+                "--fail-fast",
+                "--duration-tolerance", "0.25"
+            ],
+        )
+
+        run_transcription.main()
+
+        transcriber_loader.assert_called_once_with(
+            model_name="openai/whisper-tiny",
+            device="cpu",
+            use_fp16=True,
+            decode_mode="sequential_long_form",
+        )
+
+        run_dir = results_root / "test_run"
+        snapshot = run_dir / "manifest_snapshot.csv"
+
+        assert (run_dir / "run_config.json").exists()
+        assert snapshot.exists()
+
+        pipeline_mock.assert_called_once()
+        kwargs = pipeline_mock.call_args.kwargs
+
+        assert kwargs["transcriber"] is dummy_transcriber
+        assert kwargs["data_root"] == data_root
+        assert kwargs["results_path"] == run_dir / "transcriptions.csv"
+        assert kwargs["retry_errors"] is True
+        assert kwargs["fail_fast"] is True
+        assert kwargs["duration_tolerance_s"] == pytest.approx(0.25)
+
+        assert kwargs["manifest"]["sample_id"].tolist() == ["sample_1"]
+
+    def test_fp32_flag_disables_fp16(self, tmp_path, monkeypatch):
+        manifest_path = tmp_path / "manifest.csv"
+        pd.DataFrame(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "filepath": "sample.wav",
+                }
+            ]
+        ).to_csv(manifest_path, index=False)
+        
+        dummy_transcriber = DummyTranscriber()
+        transcriber_loader = Mock(return_value=dummy_transcriber)
+
+        monkeypatch.setattr(
+            run_transcription, 
+            "WhisperTranscriber", 
+            transcriber_loader
+        )
+
+        monkeypatch.setattr(
+            run_transcription,
+            "run_transcription_manifest",
+            Mock(return_value=pd.DataFrame()),
+        )
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "run_transcription.py",
+                "--manifest", str(manifest_path),
+                "--run-name", "fp32_run",
+                "--model", "openai/whisper-tiny",
+                "--fp32",
+                "--results-root",
+                str(tmp_path / "runs"),
+            ],
+        )
+
+        run_transcription.main()
+
+        assert transcriber_loader.call_args.kwargs["use_fp16"] is False
+
