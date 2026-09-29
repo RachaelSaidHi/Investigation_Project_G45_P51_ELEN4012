@@ -32,9 +32,9 @@ python -m pip install torch torchvision
 ## 3. Acquire the Speech Accent Archive
 
 
-1. Download the dataset from Kaggle as zip:
+1. Download the dataset from Kaggle as ZIP file:
 https://www.kaggle.com/datasets/rtatman/speech-accent-archive   
-**The dataset requires approximately 920 MB of disk space after extraction**
+**Note: The dataset requires approximately 920 MB of disk space after extraction**
 
 2. In the project repository, create the following directory structure if it does not already exist:
 
@@ -49,7 +49,7 @@ data/
 data/raw/saa
 ```
 
-4. After extraction, the folder structure is:
+4. After extraction, the folder structure should be:
 
 ```
 data/
@@ -64,33 +64,102 @@ data/
                 ├── ...
                 └── yoruba5.mp3
 ```
-The nested `recordings/recordings/` comes from the original Kaggle structure   
-The `data/` directory is in `.gitignore` and is not committed.
+The nested `recordings/recordings/` comes from the original Kaggle structure.  
+The `data/raw` directory is in `.gitignore` and is not committed.  
 
-## 4. Build the manifests
 
-Run these three scripts in order from the project root:
+## 4. Acquire AfriSpeech
 
-```bash
-# Step 1: Build the full SAA manifest (all 2,138 recordings)
-python -m scripts.build_full_saa_manifest
+AfriSpeech is acquired from the Hugging Face dataset:
 
-# Step 2: Filter to the study accent groups and apply adult filter
-python -m scripts.build_study_manifest
-
-# Step 3: Build the small dev subset for quick iteration
-python -m scripts.build_dev_manifest
+```text
+intronhealth/afrispeech-200
 ```
 
-This produces three files in `data/manifests/`:
+Run the acquisition script from the project root:
+
+```bash
+python -m scripts.data.acquire_afrispeech
+```
+**Note: The dataset requires approximately 2.15 GB of disk space after extraction**
+
+The accent and split combinations that will be downloaded are specified in:
+
+```text
+configs/afrispeech_acquisition.json
+```
+
+The script downloads the required transcript metadata and audio and stores them under:
+
+```text
+data/raw/afrispeech/
+```
+
+The directory structure comes from the original AfriSpeech structure.  
+The `data/raw` directory is in `.gitignore` and is not committed.
+
+The current study uses the Hausa, Yoruba and Swahili test splits. The AfriSpeech swahili label is standardised to kiswahili in the study manifest.
+
+
+## 5. Build manifests and preprocess audio 
+
+Run the following scripts in order from the project root:
+
+```bash
+# Step 1: Build the full manifest from all locally available datasets
+python -m scripts.data.build_full_manifest
+
+# Step 2: Apply the study selection rules
+python -m scripts.data.build_study_manifest
+
+# Step 3: Preprocess the study recordings and calculate QC measurements
+python -m scripts.preprocessing.preprocess_audio
+
+# Step 4: Apply QC and build the final analysis manifest
+python -m scripts.data.build_analysis_manifest
+
+# Step 5: Build a small development subset from the analysis manifest
+python -m scripts.data.build_dev_manifest
+```
+
+This produces the following files:
 
 | File | Contents | Use |
 |---|---|---|
-| `full_manifest.csv` | Every SAA recording in standardised format | Not used directly — input to the next step |
-| `study_manifest.csv` | ~409 recordings from the 7 selected accent groups | The actual experimental dataset |
-| `dev_manifest.csv` | ~14 recordings, 1 female + 1 male per group | Quick pipeline development and testing |
+| `full_manifest.csv` | All locally available SAA and AfriSpeech recordings in the common manifest format | Input to study selection |
+| `study_manifest.csv` | Recordings meeting the dataset-specific metadata selection rules | Input to preprocessing and QC |
+| `audio_qc_study_manifest.csv` | Audio quality measurements and QC exclusion decisions | Input to analysis selection |
+| `analysis_manifest.csv` | Final QC-passing recordings, with one recording per retained AfriSpeech source ID | Experimental dataset |
+| `dev_manifest.csv` | Small subset of the analysis manifest, containing up to one female- and one male-labelled recording per dataset/accent group | Pipeline development and testing |
 
-## 5. Verify
+The full manifest contains all usable data available locally, while the study manifest contains the samples that meet the metadata-based study selection criteria before audio quality control. The analysis manifest contains the samples used in the experiment.
+
+The manifest CSVs are stored in `data/manifests/`, except for the QC table, which is stored in `data/processed/`.
+
+
+
+### Audio preprocessing
+
+All study recordings are converted to 16 kHz mono WAV files and stored in `data/processed/audio/`.
+
+Existing WAV files are reused by default. Use `--overwrite` to regenerate them if the audio preprocessing method changes:
+
+```bash
+python -m scripts.preprocessing.preprocess_audio --overwrite
+```
+
+### Quality control
+
+Recordings are excluded if their duration is outside 5–60 seconds or they contain less than 0.05% spectral energy above 4 kHz. WADA-SNR is measured for diagnostic purposes but is not used for exclusion.
+
+### Analysis selection
+
+The analysis manifest retains all QC-passing SAA recordings and one randomly selected QC-passing recording per AfriSpeech source ID, using a fixed seed.
+
+The development manifest contains a smaller subset of the analysis recordings for pipeline testing.
+
+
+## 6. Verify
 
 ```bash
 python -m pytest tests/test_dev_manifest.py -v
@@ -98,30 +167,48 @@ python -m pytest tests/test_saa_loader.py -v
 python -m pytest tests/test_study_manifest.py -v
 ```
 
-All tests should pass. If SAA is not installed, the SAA loader tests will skip rather than fail.
+All tests should pass.
 
-## 6. What the manifests contain
+Most tests use synthetic data. Real-data sanity checks are skipped if the required local dataset or manifest is not available.
 
-Both `study_manifest.csv` and `dev_manifest.csv` have the same columns. The important ones for the ASR pipeline are:
+## 7. What the manifests contain
 
-- `sample_id` — unique identifier used to key results
-- `filepath` — path to the audio file relative to `data/raw/`
-- `accent_group` — the experimental accent category
-- `reference_transcript` — the correct transcript for WER computation
-- `sex` — needed later for sex-matched analysis
-- `speaker_id` — one recording per speaker in SAA
+The full, study, analysis and development manifests use the same common schema. The QC table separately stores audio quality measurements and exclusion decisions. Important columns for the DSP, ASR and analysis pipelines include:
 
-To load audio for a given manifest row:
+- `sample_id` — unique identifier for each audio recording.
+- `dataset` — source dataset (`saa` or `afrispeech`).
+- `source_split` — original dataset split where applicable.
+- `filepath` — path to the original audio file relative to `data/raw/`.
+- `processed_filepath` — path to the processed WAV file relative to `data/processed/`; populated in the analysis and development manifests.
+- `speaker_id` — speaker or source identifier provided by the dataset, prefixed by dataset.
+- `accent_raw` — original accent-related label provided by the source dataset.
+- `accent_group` — standardised study accent category used for analysis.
+- `reference_transcript` — reference text for WER computation.
+- `sex` — source-provided male or female metadata.
+- `age` — exact age where available.
+- `age_group` — age range where available.
+- `duration_s` — original recording duration in seconds.
+- `domain` — speech domain or recording context.
+
+SAA contains one recording per speaker. AfriSpeech may contain multiple recordings per source ID, but the analysis manifest retains only one QC-passing recording per ID. AfriSpeech source IDs have not been independently verified as unique speakers.
+
+Both the DSP and ASR pipelines should use `analysis_manifest.csv` for the full experiment and retain `sample_id` in their outputs so that the results can be combined.
+
+To locate the processed audio for a given manifest row:
 
 ```python
 from pathlib import Path
 import pandas as pd
 
-DATA_ROOT = Path("data/raw")
-manifest = pd.read_csv("data/manifests/study_manifest.csv")
+PROCESSED_ROOT = Path("data/processed")
+
+manifest = pd.read_csv(
+    "data/manifests/analysis_manifest.csv",
+    keep_default_na=False,
+)
 
 row = manifest.iloc[0]
-audio_path = DATA_ROOT / row["filepath"]
+audio_path = PROCESSED_ROOT / row["processed_filepath"]
 ```
 
 ## 7. Testing
@@ -235,8 +322,17 @@ project/
 ├── README.md
 ├── .gitignore
 ├── requirements.txt
+│
+├── configs/                     # acquisition and other project configurations
+│
 ├── src/                        # contains the core code and functions
 │   | 
+│   ├── data/
+│   │   └── .py files
+│   │
+│   ├── preprocessing/
+│   │   └── .py files
+│   │
 │   ├── asr/
 │   │   └── .py files
 │   │
@@ -246,14 +342,16 @@ project/
 │   └── analysis/
 │       └── .py files
 │
-├── scripts/                    # like python notebooks maybe
-│   └── python notebooks
+├── scripts/
+│   ├── inspection/              # exploratory data/audio inspection scripts
+│   ├── data/                    # data acquisition and manifest-building scripts
+│   ├── preprocessing/           # audio preprocessing and QC scripts
+│   └── asr/
 │
 ├── data/
-│   ├── README.md
 │   ├── raw/                    # GITIGNORED
-│   ├── preprocessed/           # GITIGNORED
-│   └── manifests/
+│   ├── processed/              # GITIGNORED
+│   └── manifests/              # GITIGNORED
 │       └── .csv
 │
 ├── results/
@@ -261,7 +359,9 @@ project/
 │   ├── dsp/
 │   └── analysis/
 │
-└── tests/
-    └── .py files
+├── tests/
+│   └── .py files
+│
+└── third_party/                # licenses / references for third party adapted code
 
 ```

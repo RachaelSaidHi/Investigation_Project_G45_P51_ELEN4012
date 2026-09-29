@@ -1,11 +1,22 @@
+"""Summarise candidate SAA accent groups for study selection.
+
+Loads SAA with the project loader and, for each native language with at
+least three speakers, prints the number of speakers, total minutes of audio,
+sex counts, age range and countries. Used to choose the SAA accent groups;
+not part of the pipeline.
+
+Run from project root:
+    python -m scripts.inspection.inspect_saa_candidates
+"""
+
 from pathlib import Path
 
 import pandas as pd
 
-from data.load_saa import load_saa
+from src.data.load_saa import load_saa
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = PROJECT_ROOT / "data" / "raw"
 
 

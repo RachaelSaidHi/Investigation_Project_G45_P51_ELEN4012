@@ -1,3 +1,11 @@
+"""Validate a manifest before it is written or used.
+
+Checks that the columns match MANIFEST_COLUMNS exactly, including their
+order; that every sample_id is unique; that required columns contain no
+missing or blank values; and that every filepath exists under the given
+raw-data root. Processed-audio paths are not checked here.
+"""
+
 from pathlib import Path
 
 import pandas as pd

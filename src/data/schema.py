@@ -1,9 +1,19 @@
+"""Common manifest schema shared by all datasets.
+
+MANIFEST_COLUMNS defines the columns, and their order, of every manifest
+(full, study, analysis and dev). REQUIRED_COLUMNS must be filled for every
+recording. Other columns may be blank where a dataset does not provide the
+information, or until the stage that fills them (for example, accent_group
+at study selection and processed_filepath at analysis selection).
+"""
+
 MANIFEST_COLUMNS = [
     "sample_id",
     "dataset",
     "source_split",
     "source_sample_id",
     "filepath",
+    "processed_filepath",
     "speaker_id",
     "accent_raw",
     "accent_group",
@@ -16,7 +26,6 @@ MANIFEST_COLUMNS = [
     "age_onset",
     "duration_s",
     "original_sample_rate",
-    "snr_est",
     "domain",
     "reference_transcript",
 ]

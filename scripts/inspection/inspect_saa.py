@@ -1,9 +1,21 @@
+"""Exploratory inspection of the raw Speech Accent Archive metadata.
+
+Prints the number of usable recordings, speaker counts by country and native
+language, the speakers from selected countries of interest, and a comparison
+between recordings marked usable in the metadata and the MP3 files present
+on disk. Used to understand the dataset before writing the loader; not part
+of the pipeline.
+
+Run from project root:
+    python -m scripts.inspection.inspect_saa
+"""
+
 from pathlib import Path
 
 import pandas as pd
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 metadata_path = (
     PROJECT_ROOT

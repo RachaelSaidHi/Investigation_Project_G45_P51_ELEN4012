@@ -1,6 +1,9 @@
 # raw datasets
 data/raw/
 
+# processed datasets
+data/processed/
+
 # generated manifests
 data/manifests/
 
@@ -30,3 +33,12 @@ Thumbs.db__pycache__
 
 # Results
 results/asr
+
+# inspection files
+# inspection/
+scripts/inspection/results
+
+# old dev manifest 
+build_dev_manifest_without_afrispeech.py
+test_dev_manifest_without_afrispeech.py
+test_dev_manifest_old_from_study_manifest.py

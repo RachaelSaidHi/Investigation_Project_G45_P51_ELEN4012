@@ -1,12 +1,24 @@
+"""Build the full manifest from all locally available datasets.
+
+Runs the SAA and AfriSpeech loaders, combines their output in the common
+manifest schema, validates it and writes data/manifests/full_manifest.csv.
+No study selection is applied: the full manifest records all usable data
+currently on disk.
+
+Run from project root:
+    python -m scripts.data.build_full_manifest
+"""
+
 from pathlib import Path
 
 import pandas as pd
 
 from src.data.load_saa import load_saa
+from src.data.load_afrispeech import load_afrispeech
 from src.data.validation import validate_manifest
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = PROJECT_ROOT / "data" / "raw"
 MANIFEST_DIR = PROJECT_ROOT / "data" / "manifests"
 OUTPUT_PATH = MANIFEST_DIR / "full_manifest.csv"
@@ -15,10 +27,7 @@ def main() -> None:
     # Each loader returns the same schema.
     manifests = [
         load_saa(DATA_ROOT),
-
-        # TODO:
-        # load_afrispeech(DATA_ROOT),
-        # load_edacc(DATA_ROOT),
+        load_afrispeech(DATA_ROOT),
     ]
 
     full_manifest = pd.concat(manifests, ignore_index=True,)
@@ -38,3 +47,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# run using 
+# python -m scripts.data.build_full_manifest
