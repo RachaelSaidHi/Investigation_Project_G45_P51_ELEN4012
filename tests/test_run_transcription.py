@@ -1,5 +1,8 @@
 """
 Tests for the script to run the transcription pipeline
+
+The transcription pipeline itself is mocked in main() tests because its behaviour is
+covered separately in test_scoring_pipeline.py.
 """
 
 import copy

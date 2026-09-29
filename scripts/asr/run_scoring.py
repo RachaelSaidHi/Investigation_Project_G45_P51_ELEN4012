@@ -64,11 +64,6 @@ def build_scoring_config(manifest_path: Path, transcriptions_path: Path) -> dict
     Build metadata describing the scoring run.
     """
 
-    try:
-        jiwer_version = jiwer.__version__
-    except AttributeError:
-        jiwer_version = None
-
     return {
         "manifest_path": str(manifest_path.resolve()),
         "transcriptions_path": str(transcriptions_path.resolve()),

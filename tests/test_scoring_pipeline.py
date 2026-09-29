@@ -165,6 +165,33 @@ class TestValidateTranscriptions:
         with pytest.raises(ValueError, match="duplicate sample_id"):
             scoring_pipeline.validate_transcriptions(transcriptions)
 
+    @pytest.mark.parametrize(
+        "invalid_sample_id",
+        [
+            "",
+            " ",
+            "   ",
+        ],
+    )
+    def test_empty_sample_id_fails(
+        self,
+        invalid_sample_id,
+    ):
+        transcriptions = make_transcriptions()
+
+        transcriptions.loc[
+            0,
+            "sample_id",
+        ] = invalid_sample_id
+
+        with pytest.raises(
+            ValueError,
+            match="empty sample_id",
+        ):
+            scoring_pipeline.validate_transcriptions(
+                transcriptions
+            )
+
 
 class TestValidateSampleIds:
 

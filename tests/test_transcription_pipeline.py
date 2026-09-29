@@ -204,11 +204,15 @@ class TestValidateManifest:
         self,
         invalid_sample_id,
     ):
-        manifest = make_manifest()
-        manifest.loc[0, "sample_id"] = invalid_sample_id
+        manifest = pd.DataFrame([
+        {
+            "sample_id": invalid_sample_id,
+            "filepath": "sample.wav",
+        }
+        ])
 
         with pytest.raises(ValueError, match="empty sample_id"):
-            scoring_pipeline.validate_manifest(manifest)
+            transcription_pipeline.validate_manifest(manifest)
 
 
 class TestValidateAudioPath:
