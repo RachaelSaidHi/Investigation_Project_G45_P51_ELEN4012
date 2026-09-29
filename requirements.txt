@@ -14,13 +14,10 @@ mutagen==1.48.1
 
 # testing
 pytest==9.1.1
-datasets==5.0.1
 
+# ASR
 transformers==5.17.0
-librosa==1.0.0
 jiwer==4.0.0
-numpy==2.5.2
-soundfile==0.14.0
 huggingface-hub==1.31.0
 
 # PyTorch is installed separately depending on whether CPU or GPU
