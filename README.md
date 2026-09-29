@@ -162,9 +162,7 @@ The development manifest contains a smaller subset of the analysis recordings fo
 ## 6. Verify
 
 ```bash
-python -m pytest tests/test_dev_manifest.py -v
-python -m pytest tests/test_saa_loader.py -v
-python -m pytest tests/test_study_manifest.py -v
+python -m pytest -v
 ```
 
 All tests should pass.
