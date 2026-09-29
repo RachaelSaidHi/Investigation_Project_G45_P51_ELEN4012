@@ -85,6 +85,9 @@ def validate_manifest(manifest: pd.DataFrame) -> None:
 
     sample_ids = manifest["sample_id"].astype(str)
 
+    if sample_ids.str.strip().eq("").any():
+        raise ValueError("Manifest contains empty sample_id values.")
+
     duplicated = (sample_ids[sample_ids.duplicated()].unique())
 
     if len(duplicated) > 0:
@@ -105,6 +108,9 @@ def validate_transcriptions(transcriptions: pd.DataFrame) -> None:
         raise ValueError("Transcription results contain missing sample_id values.")
 
     sample_ids = (transcriptions["sample_id"].astype(str))
+
+    if sample_ids.str.strip().eq("").any():
+        raise ValueError("Manifest contains empty sample_id values.")
 
     duplicated = (sample_ids[sample_ids.duplicated()].unique())
 

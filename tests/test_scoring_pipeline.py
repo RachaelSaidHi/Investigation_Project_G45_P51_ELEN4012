@@ -98,6 +98,24 @@ class TestValidateManifest:
         with pytest.raises(ValueError, match="duplicate sample_id"):
             scoring_pipeline.validate_manifest(manifest)
 
+    @pytest.mark.parametrize(
+        "invalid_sample_id",
+        [
+            "",
+            " ",
+            "   ",
+        ],
+    )
+    def test_empty_sample_id_fails(
+        self,
+        invalid_sample_id,
+    ):
+        manifest = make_manifest()
+        manifest.loc[0, "sample_id"] = invalid_sample_id
+
+        with pytest.raises(ValueError, match="empty sample_id"):
+            scoring_pipeline.validate_manifest(manifest)
+
 
 class TestValidateTranscriptions:
 
@@ -227,8 +245,11 @@ class TestBuildPendingRecord:
         record = scoring_pipeline.build_pending_record(row)
 
         assert record["sample_id"] == "sample_1"
+        assert record["dataset"] == "saa"
         assert record["transcription_status"] == "pending"
         assert record["scoring_status"] == "pending_transcription"
+        assert record["reference_norm"] is None
+        assert record["hypothesis_norm"] is None
         assert record["model_name"] is None
         assert record["wer"] is None
 
@@ -251,6 +272,8 @@ class TestBuildErrorRecord:
         assert record["transcription_status"] == "error"
         assert record["scoring_status"] == "transcription_error"
         assert record["scoring_error_type"] is None
+        assert record["reference_norm"] is None
+        assert record["hypothesis_norm"] is None
         assert record["wer"] is None
 
     def test_scoring_error_record_stores_exception(self):
@@ -285,9 +308,9 @@ class TestScoreSample:
             normalization_calls.append((text, dataset))
 
             if text == "THIS IS REFERENCE RAW":
-                return "this is reference normalized", 0
+                return "this is reference normalized", 1
 
-            return "this is hypothesis normalized", 0
+            return "this is hypothesis normalized", 2
 
         metric_calls = []
 
@@ -330,6 +353,8 @@ class TestScoreSample:
 
         assert result["reference_norm"] == "this is reference normalized"
         assert result["hypothesis_norm"] == "this is hypothesis normalized"
+        assert result["n_punctuation_reference"] == 1
+        assert result["n_punctuation_hypothesis"] == 2
         assert result["scoring_status"] == "ok"
         assert result["wer"] == pytest.approx(0.25)
         assert result["substitutions"] == 1
@@ -381,7 +406,7 @@ class TestScoreSample:
 
 class TestRunScoring:
 
-    def test_ok_error_and_pending_samples_are_routed_correctly(self, monkeypatch):
+    def scoring_pipeline_error_and_pending_samples_are_routed_correctly(self, monkeypatch):
         manifest = make_manifest(
             [
                 {
@@ -457,6 +482,72 @@ class TestRunScoring:
         assert results.loc["sample_1", "scoring_status"] == "ok"
         assert (results.loc["sample_2", "scoring_status"] == "transcription_error")
         assert (results.loc["sample_3", "scoring_status"]== "pending_transcription")
+
+    def test_empty_reference_is_handled_in_run_scoring(
+        self,
+        monkeypatch,
+        capsys,
+    ):
+        manifest = pd.DataFrame(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "dataset": "afrispeech",
+                    "reference_transcript": "REFERENCE RAW",
+                }
+            ]
+        )
+
+        transcriptions = pd.DataFrame(
+            [
+                {
+                    "sample_id": "sample_1",
+                    "status": "ok",
+                    "transcription_raw": "HYPOTHESIS RAW",
+                    "model_name": "openai/whisper-tiny",
+                    "decode_mode": "sequential_long_form",
+                }
+            ]
+        )
+
+        def fake_normalize(text, dataset):
+            if text == "REFERENCE RAW":
+                return "", 0
+
+            return "hypothesis normalized", 0
+
+        def should_not_be_called(*args, **kwargs):
+            pytest.fail(
+                "compute_wer should not be called for an empty reference"
+            )
+
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "normalize_text",
+            fake_normalize,
+        )
+
+        monkeypatch.setattr(
+            scoring_pipeline,
+            "compute_wer",
+            should_not_be_called,
+        )
+
+        results = scoring_pipeline.run_scoring(
+            manifest,
+            transcriptions,
+        )
+
+        row = results.iloc[0]
+
+        assert row["scoring_status"] == "empty_reference"
+        assert pd.isna(row["wer"])
+        assert pd.isna(row["substitutions"])
+        assert pd.isna(row["deletions"])
+        assert pd.isna(row["insertions"])
+
+        output = capsys.readouterr().out
+        assert "EMPTY REFERENCE | WER undefined." in output
 
     def test_manifest_metadata_is_source_of_truth(self, monkeypatch):
         manifest = make_manifest(
