@@ -101,7 +101,9 @@ def whisper_mocks(monkeypatch):
 
 @pytest.fixture
 def make_transcriber(whisper_mocks, monkeypatch):
-    """Create a mocked WhisperTranscriber with a chosen duration and decoding mode."""
+    """
+    Create a mocked WhisperTranscriber with a chosen duration and decoding mode.
+    """
 
     def _make(duration_s=10.0, decode_mode="short_form", model_name="openai/whisper-small"):
         monkeypatch.setattr(
