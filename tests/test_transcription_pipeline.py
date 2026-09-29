@@ -1,0 +1,246 @@
+"""
+Tests for the transcription pipeline functionality
+"""
+
+from types import SimpleNamespace
+
+import pandas as pd
+import pytest
+
+from src.asr import transcription_pipeline 
+
+
+# Helpers
+
+def make_transcription_result(
+    text="decoded transcript",
+    duration_s=10.0,
+    preprocess_s=0.10,
+    inference_s=0.50,
+    decode_s=0.10,
+):
+    elapsed_s = preprocess_s + inference_s + decode_s
+
+    return SimpleNamespace(
+        text=text,
+        duration_s=duration_s,
+        preprocess_s=preprocess_s,
+        inference_s=inference_s,
+        decode_s=decode_s,
+        elapsed_s=elapsed_s,
+        real_time_factor=elapsed_s / duration_s,
+    )
+
+
+class DummyTranscriber:
+    """
+    Small stand-in for WhisperTranscriber.
+
+    It records calls to transcribe() so that resume/retry behaviour can be
+    verified without loading Whisper.
+    """
+
+    def __init__(self, result=None, error=None, config=None):
+        self.result = result or make_transcription_result()
+        self.error = error
+        self.calls = []
+        self.config = config or {
+            "model_name": "openai/whisper-tiny",
+            "decode_mode": "sequential_long_form",
+            "device": "cpu",
+            "hardware": "CPU",
+            "precision": "torch.float32",
+        }
+
+    def describe(self):
+        return dict(self.config)
+
+    def transcribe(self, filepath):
+        self.calls.append(filepath)
+
+        if self.error is not None:
+            raise self.error
+
+        return self.result
+
+
+@pytest.fixture
+def transcriber_config():
+    return {
+        "model_name": "openai/whisper-tiny",
+        "decode_mode": "sequential_long_form",
+        "device": "cpu",
+        "hardware": "CPU",
+        "precision": "torch.float32",
+    }
+
+
+@pytest.fixture
+def make_transcriber(transcriber_config):
+    def _make(result=None, error=None, config=None):
+        return DummyTranscriber(
+            result=result,
+            error=error,
+            config=config or transcriber_config,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_audio_file(tmp_path):
+    """
+    Create a fake file that passes validate_audio_path().
+    """
+
+    def _make(filename="sample.wav"):
+        data_root = tmp_path / "raw"
+        path = data_root / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"dummy audio")
+        return data_root, path
+
+    return _make
+
+
+def make_existing_record(
+    sample_id="sample_1",
+    manifest_index=0,
+    status="ok",
+    transcription_raw="decoded transcript",
+):
+    """
+    Create a complete checkpoint row with all RESULT_COLUMNS present.
+    """
+
+    record = {column: None for column in transcription_pipeline.RESULT_COLUMNS}
+
+    record.update(
+        {
+            "sample_id": sample_id,
+            "dataset": "saa",
+            "filepath": "sample.wav",
+            "manifest_index": manifest_index,
+            "status": status,
+            "model_name": "openai/whisper-tiny",
+            "decode_mode": "sequential_long_form",
+            "device": "cpu",
+            "hardware": "CPU",
+            "precision": "torch.float32",
+            "transcription_raw": transcription_raw,
+            "completed_at_utc": "2026-01-01T00:00:00+00:00",
+        }
+    )
+
+    if status == "error":
+        record["error_type"] = "RuntimeError"
+        record["error_message"] = "previous failure"
+        record["transcription_raw"] = None
+
+    return record
+
+
+class TestValidateManifest:
+
+    def test_valid_manifest_is_accepted(self):
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1",
+                "filepath": "sample.wav",
+            }
+        ])
+
+        transcription_pipeline.validate_manifest(manifest)
+
+    def test_missing_required_column_fails(self):
+        manifest = pd.DataFrame([
+            {
+                "sample_id": "sample_1",
+            }
+        ])
+
+        with pytest.raises(ValueError, match="missing required columns"):
+            transcription_pipeline.validate_manifest(manifest)
+
+    def test_missing_sample_id_fails(self):
+        manifest = pd.DataFrame([
+            {
+                "sample_id": None,
+                "filepath": "sample.wav",
+            }
+        ])
+
+        with pytest.raises(ValueError, match="missing sample_id"):
+            transcription_pipeline.validate_manifest(manifest)
+
+    def test_missing_filepath_fails(self):
+        manifest = pd.DataFrame([
+            {"sample_id": "sample_1", 
+             "filepath": None
+            }
+        ])
+
+        with pytest.raises(ValueError, match="missing filepath"):
+            transcription_pipeline.validate_manifest(manifest)
+
+    def test_duplicate_sample_ids_fail(self):
+        manifest = pd.DataFrame([
+            {"sample_id": "sample_1", "filepath": "a.wav"},
+            {"sample_id": "sample_1", "filepath": "b.wav"},
+        ])
+
+        with pytest.raises(ValueError, match="duplicate sample_id"):
+            transcription_pipeline.validate_manifest(manifest)
+
+
+class TestValidateAudioPath:
+
+    def test_existing_file_is_returned(self, make_audio_file):
+        data_root, path = make_audio_file("sample.wav")
+        row = pd.Series({"filepath": "sample.wav"})
+
+        result = transcription_pipeline.validate_audio_path(row, data_root)
+
+        assert result == path
+
+    def test_missing_file_fails(self, tmp_path):
+        data_root = tmp_path / "raw"
+        data_root.mkdir()
+
+        row = pd.Series({"filepath": "missing.wav"})
+
+        with pytest.raises(FileNotFoundError, match="does not exist"):
+            transcription_pipeline.validate_audio_path(row, data_root)
+
+    def test_directory_path_fails(self, tmp_path):
+        data_root = tmp_path / "raw"
+        data_root.mkdir()
+
+        directory = data_root / "not_audio"
+        directory.mkdir()
+
+        row = pd.Series({"filepath": "not_audio"})
+
+        with pytest.raises(ValueError, match="not a file"):
+            transcription_pipeline.validate_audio_path(row, data_root)
+
+
+class TestGetManifestDuration:
+
+    def test_missing_duration_column_returns_none(self):
+        row = pd.Series({"sample_id": "1"})
+
+        assert transcription_pipeline.get_manifest_duration(row) is None
+
+    def test_nan_duration_returns_none(self):
+        row = pd.Series({"duration_s": float("nan")})
+
+        assert transcription_pipeline.get_manifest_duration(row) is None
+
+    def test_duration_is_returned_as_float(self):
+        row = pd.Series({"duration_s": 12.5})
+
+        result = transcription_pipeline.get_manifest_duration(row)
+
+        assert result == 12.5
+        assert isinstance(result, float)
