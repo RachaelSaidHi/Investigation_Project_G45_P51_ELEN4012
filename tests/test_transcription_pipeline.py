@@ -384,3 +384,133 @@ class TestBuildErrorRecord:
         assert record["processed_duration_s"] is None
         assert record["duration_difference_s"] == None
         assert record["duration_mismatch"] is None
+
+
+class TestLoadExistingResults:
+
+    def test_missing_checkpoint_returns_empty_result_table(self, tmp_path):
+        path = tmp_path / "transcriptions.csv"
+
+        results = transcription_pipeline.load_existing_results(path)
+
+        assert results.empty
+        assert list(results.columns) == transcription_pipeline.RESULT_COLUMNS
+
+    def test_checkpoint_missing_required_columns_fails(self, tmp_path):
+        path = tmp_path / "transcriptions.csv"
+        pd.DataFrame([{"sample_id": "sample_1"}]).to_csv(path, index=False)
+
+        with pytest.raises(ValueError, match="missing columns"):
+            transcription_pipeline.load_existing_results(path)
+
+    def test_duplicate_sample_ids_in_checkpoint_fail(self, tmp_path):
+        path = tmp_path / "transcriptions.csv"
+
+        results = pd.DataFrame(
+            [
+                make_existing_record("sample_1", 0),
+                make_existing_record("sample_1", 1),
+            ],
+            columns=transcription_pipeline.RESULT_COLUMNS,
+        )
+        results.to_csv(path, index=False)
+
+        with pytest.raises(ValueError, match="duplicate sample IDs"):
+            transcription_pipeline.load_existing_results(path)
+
+    def test_existing_checkpoint_is_loaded(self, tmp_path):
+        path = tmp_path / "transcriptions.csv"
+
+        existing = pd.DataFrame(
+            [
+                make_existing_record(
+                    "sample_1",
+                    0,
+                    status="ok",
+                    transcription_raw="hello world",
+                ),
+                make_existing_record(
+                    "sample_2",
+                    1,
+                    status="error",
+                ),
+            ],
+            columns=transcription_pipeline.RESULT_COLUMNS,
+        )
+
+        existing.to_csv(path, index=False)
+
+        results = transcription_pipeline.load_existing_results(path)
+
+        assert len(results) == 2
+
+        assert list(results.columns) == transcription_pipeline.RESULT_COLUMNS
+
+        assert results.iloc[0]["sample_id"] == "sample_1"
+        assert results.iloc[0]["status"] == "ok"
+        assert results.iloc[0]["transcription_raw"] == "hello world"
+
+        assert results.iloc[1]["sample_id"] == "sample_2"
+        assert results.iloc[1]["status"] == "error"
+
+
+class TestUpsertResult:
+
+    def test_new_sample_is_inserted(self):
+        results = pd.DataFrame(columns=transcription_pipeline.RESULT_COLUMNS)
+        record = make_existing_record("sample_1", 0)
+
+        updated = transcription_pipeline.upsert_result(results, record)
+
+        assert len(updated) == 1
+        assert updated.iloc[0]["sample_id"] == "sample_1"
+
+    def test_existing_sample_is_replaced(self):
+        results = pd.DataFrame(
+            [make_existing_record("sample_1", 0, status="error")],
+            columns=transcription_pipeline.RESULT_COLUMNS,
+        )
+
+        replacement = make_existing_record(
+            "sample_1",
+            0,
+            status="ok",
+            transcription_raw="retry worked",
+        )
+
+        updated = transcription_pipeline.upsert_result(results, replacement)
+
+        assert len(updated) == 1
+        assert updated.iloc[0]["status"] == "ok"
+        assert updated.iloc[0]["transcription_raw"] == "retry worked"
+
+    def test_results_are_sorted_by_manifest_index(self):
+        results = pd.DataFrame(
+            [make_existing_record("sample_2", 1)],
+            columns=transcription_pipeline.RESULT_COLUMNS,
+        )
+
+        updated = transcription_pipeline.upsert_result(
+            results,
+            make_existing_record("sample_1", 0),
+        )
+
+        assert updated["sample_id"].tolist() == ["sample_1", "sample_2"]
+
+
+class TestSaveResultsAtomic:
+
+    def test_results_are_saved_and_temp_file_removed(self, tmp_path):
+        path = tmp_path / "results" / "transcriptions.csv"
+        results = pd.DataFrame(
+            [make_existing_record("sample_1", 0)],
+            columns=transcription_pipeline.RESULT_COLUMNS,
+        )
+
+        transcription_pipeline.save_results_atomic(results, path)
+
+        assert path.exists()
+        assert not path.with_name(path.name + ".tmp").exists()
+
+        loaded = pd.read_csv(path)
+        assert loaded.iloc[0]["sample_id"] == "sample_1"
