@@ -320,6 +320,7 @@ def run_transcription_manifest(
 ) -> pd.DataFrame:
         """
         Transcribe an entire manifest with checkpoints and resumability.
+        
         Successfully transcribed samples already present are skipped.
         Previously failed samples are skipped by default, but can be retried.
         Results are saved after every attempted sample.

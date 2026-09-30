@@ -33,7 +33,7 @@ def require_columns(df: pd.DataFrame, columns: list[str], label: str = "Manifest
     missing = columns - set(df.columns)
     
     if missing:
-        raise ValueError(f"Manifest is missing required columns: {sorted(missing)}")
+        raise ValueError(f"{label} is missing required columns: {sorted(missing)}")
 
     for column in sorted(columns):
         blank_rows = df[column].map(_is_blank)
@@ -45,7 +45,7 @@ def require_columns(df: pd.DataFrame, columns: list[str], label: str = "Manifest
             )
 
 
-def validate_sample_ids(df: pd.DataFrame, label = "Manifest") -> None:
+def validate_sample_ids(df: pd.DataFrame, label: str = "Manifest") -> None:
     """
     Check that sample_id is present, non-empty and unique in every row.
 

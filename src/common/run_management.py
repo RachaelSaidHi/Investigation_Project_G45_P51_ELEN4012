@@ -23,6 +23,7 @@ import shutil
 from pathlib import Path
  
 import pandas as pd
+from src.common.manifest_checks import validate_sample_ids
 
 RUN_CONFIG_NAME = "run_config.json"
 MANIFEST_SNAPSHOT_NAME = "manifest_snapshot.csv"
@@ -44,8 +45,6 @@ def load_existing_results(results_path: Path, columns: list[str]) -> pd.DataFram
     """
     Load an existing results checkpoint, or return an empty table if none 
     exists.
-
-    If no checkpoint exists, return an empty results table.
     """
 
     if not results_path.exists():
@@ -62,21 +61,23 @@ def load_existing_results(results_path: Path, columns: list[str]) -> pd.DataFram
 
     if missing:
         raise ValueError(
-            "Existing transcription results are "
+            "Existing results are "
             f"missing columns: {sorted(missing)}"
         )
 
-    # There should be no duplicated sample ids in the existing results
-    duplicated = results.loc[
-        results[ID_COLUMN].duplicated(),
-        ID_COLUMN,
-    ].unique()
+    validate_sample_ids(results, label="Existing results")
 
-    if len(duplicated) > 0:
-        raise ValueError(
-            "Existing transcription results contain "
-            f"duplicate sample IDs: {duplicated.tolist()}"
-        )
+    # There should be no duplicated sample ids in the existing results
+    # duplicated = results.loc[
+    #     results[ID_COLUMN].duplicated(),
+    #     ID_COLUMN,
+    # ].unique()
+
+    # if len(duplicated) > 0:
+    #     raise ValueError(
+    #         "Existing results contain "
+    #         f"duplicate sample IDs: {duplicated.tolist()}"
+    #     )
 
     return results[columns]
 
@@ -139,7 +140,6 @@ def save_results_atomic(results: pd.DataFrame, results_path: Path, columns: list
 
     os.replace(temp_path, results_path)
 
-    return
 
 
 
@@ -194,7 +194,7 @@ def prepare_run_directory(
         Path to the manifest snapshot belonging to the run.
     """
 
-    config_path = run_dir / {RUN_CONFIG_NAME}
+    config_path = run_dir / RUN_CONFIG_NAME
     manifest_snapshot_path = run_dir / MANIFEST_SNAPSHOT_NAME
 
     # Resume an existing run
