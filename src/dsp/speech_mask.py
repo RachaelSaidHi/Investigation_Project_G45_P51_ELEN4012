@@ -571,6 +571,11 @@ def detect_speech_frames(
         parameter_name="hop_length_s",
     )
 
+    if frame_length < 1 or hop_length < 1:
+        raise ValueError(
+            "Frame and hop lengths must each be at least one sample."
+        )
+    
     actual_hop_length_s = (
         hop_length
         / sample_rate
@@ -587,11 +592,6 @@ def detect_speech_frames(
         hop_length_s=actual_hop_length_s,
         parameter_name="min_speech_run_s",
     )
-
-    if frame_length < 1 or hop_length < 1:
-        raise ValueError(
-            "Frame and hop lengths must each be at least one sample."
-        )
 
     energy_db, all_zero = frame_energy_db(
         audio=audio,
