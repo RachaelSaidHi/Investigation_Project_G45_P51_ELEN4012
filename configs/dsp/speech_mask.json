@@ -1,0 +1,9 @@
+{
+  "frame_length_s": 0.025,
+  "hop_length_s": 0.010,
+  "reference_percentile": 95,
+  "threshold_db": 30,
+  "max_gap_s": 0.10,
+  "min_speech_run_s": 0.05,
+  "min_total_speech_s": 1.0
+}

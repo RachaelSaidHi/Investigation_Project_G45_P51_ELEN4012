@@ -20,5 +20,8 @@ transformers==5.17.0
 jiwer==4.0.0
 huggingface-hub==1.31.0
 
+# DSP
+matplotlib==3.11.2
+
 # PyTorch is installed separately depending on whether CPU or GPU
 # execution is required. See README for installation instructions.
