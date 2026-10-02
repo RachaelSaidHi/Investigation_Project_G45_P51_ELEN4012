@@ -32,7 +32,13 @@ REQUIRED_CONFIG_KEYS = (
 
 
 def _validate_config(config: dict) -> None:
-    """Validate the required speech-mask configuration."""
+    """
+    Validate the required speech-mask configuration.
+    
+    This checks the configuration before any signal processing takes place,
+    so invalid settings fail explicitly rather than producing a mask with
+       unintended behaviour.
+    """
 
     missing = [
         key
@@ -91,7 +97,16 @@ def _seconds_to_samples(
     sample_rate: int,
     parameter_name: str,
 ) -> int:
-    """Convert a duration to an exact whole number of samples."""
+    """
+    Convert a duration to an exact whole number of samples.
+    
+    Audio exists on a discrete sample grid, so a configured duration such
+    as the frame or hop length must correspond to a whole number of samples.
+    For example, 0.010 s at 16 kHz corresponds exactly to 160 samples.
+    
+    The function deliberately rejects durations that fall between samples
+    rather than silently rounding the configuration to a different value.
+    """
 
     samples = duration_s * sample_rate
     rounded_samples = round(samples)
@@ -113,7 +128,17 @@ def _seconds_to_frames(
     hop_length_s: float,
     parameter_name: str,
 ) -> int:
-    """Convert a duration to an exact whole number of frame hops."""
+    """
+    Convert a duration to an exact whole number of frame hops.
+    
+    Once the audio has been divided into frames, temporal smoothing operates
+    on discrete frame decisions rather than directly on floating-point
+    seconds. For example, with a 0.010 s hop, 0.100 s corresponds to exactly
+    10 frame hops.
+    
+    Requiring an exact frame count avoids ambiguous boundary behaviour caused
+    by silently rounding a configured duration to the nearest frame.
+    """
 
     frames = duration_s / hop_length_s
     rounded_frames = round(frames)
@@ -140,6 +165,15 @@ def frame_energy_db(
 
     Also returns a Boolean array identifying frames that contain only
     digital zero samples.
+
+    frame_length and hop_length are expressed in samples, not seconds.
+    Each output position corresponds to one frame on the same centred frame
+    grid: energy_db[k] and all_zero[k] therefore describe the same frame.
+    
+    RMS provides one overall energy value for each frame. Converting it to
+    dB makes relative differences in recording level easier to threshold.
+    all_zero is kept separately because exact digital silence receives
+    special treatment later in the pipeline.
     """
 
     if frame_length < 1:
@@ -154,6 +188,10 @@ def frame_energy_db(
 
     # Zero-padding by half a frame matches librosa's centred framing.
     # Frame k is centred on sample k * hop_length.
+    #
+    # Padding supplies zeros outside the recording, so the first frame can be
+    # centred at time 0 and the final frames can still follow the same regular
+    # frame grid near the end of the recording.
     padded = np.pad(
         audio.astype(
             np.float64,
@@ -169,11 +207,15 @@ def frame_energy_db(
         hop_length=hop_length,
     )
 
+    # This distinguishes exact digital silence from merely low-energy audio.
+    # A quiet speech frame can therefore still participate in thresholding,
+    # whereas an entirely zero-valued frame is treated explicitly as silence.
     all_zero = np.all(
         frames == 0,
         axis=0,
     )
 
+    # RMS collapses all samples in each frame to one energy measurement.
     rms = np.sqrt(
         np.mean(
             frames ** 2,
@@ -203,8 +245,8 @@ def _threshold_frames(
     """
     Apply the recording-relative energy threshold.
     
-    Mark frames active if their energy is at least threshold_db below the
-    reference level. All-zero frames are never active.
+    Mark frames active if their energy is at or above
+    (reference_db - threshold_db). All-zero frames are never active.
     """
 
     if np.all(all_zero):
@@ -264,6 +306,15 @@ def _bridge_short_gaps(
     Fill sufficiently short inactive gaps between active regions.
 
     Gaps containing all-zero frames are never bridged.
+
+    This smoothing step handles brief low-energy interruptions inside an
+    otherwise active region. A short False run between two True regions can
+    therefore become True if it is no longer than max_gap_frames. This 
+    accommodates the small silences before stop consonants (eg. /p/ or /t/)
+    
+    Only internal gaps are considered. Silence before the first active
+    region or after the last active region is not interpreted as a brief
+    interruption within speech.
     """
 
     bridged = active.copy()
@@ -296,7 +347,17 @@ def _remove_short_runs(
     active: np.ndarray,
     min_speech_run_frames: int,
 ) -> np.ndarray:
-    """Mark active runs shorter than min_speech_run_frames as inactive."""
+    """
+    Mark active runs shorter than min_speech_run_frames as inactive.
+    
+    This is the opposite type of temporal cleanup to gap bridging. Instead
+    of filling a short inactive region, it removes a very short active
+    region that is too brief to retain as speech activity. Likely due to 
+    noise / microphone clicks etc.
+    
+    A run exactly equal to min_speech_run_frames is retained; only shorter
+    runs are removed.
+    """
 
     cleaned = active.copy()
 
@@ -319,7 +380,13 @@ def _clean_frames(
     max_gap_frames: int,
     min_speech_run_frames: int,
 ) -> np.ndarray:
-    """Bridge short gaps, then remove short active speech runs."""
+    """
+    Bridge short gaps, then remove short active speech runs.
+    
+    This function coordinates the two temporal smoothing operations. It does
+    not calculate energy or thresholds itself; it starts from the initial
+    Boolean frame decisions produced by _threshold_frames().
+    """
 
     # Bridging first, so that a short syllable separated from its neighbour
     # by a stop closure is joined up before short-run removal could delete it
@@ -354,6 +421,11 @@ def frames_to_intervals(
     Frame k is centred at k * hop and represents half a hop on either
     side, so a run of frames [i, j) spans (i - 0.5) * hop to 
     (j - 0.5) * hop. Intervals are clipped to the recording boundaries.
+
+    The returned values are real times in seconds. Boundaries are placed
+    halfway between neighbouring frame centres because that is the natural
+    point at which responsibility changes from one frame decision to the
+    next.
     """
 
     intervals = []
@@ -362,11 +434,18 @@ def frames_to_intervals(
         active,
         target=True,
     ):
+        # start is the centre index of the first active frame. Subtracting
+        # half a hop moves the boundary halfway toward the preceding frame.
+        # At the start of the file this is clipped to 0 seconds.
         start_s = max(
             0.0,
             (start - 0.5) * hop_length_s,
         )
 
+        # end is already the first frame index after the run, so
+        # (end - 0.5) * hop lies halfway between the final active frame
+        # and the following inactive frame. The recording duration clips
+        # any boundary that would otherwise extend beyond the audio.
         end_s = min(
             duration_s,
             (end - 0.5) * hop_length_s,
@@ -437,7 +516,20 @@ def detect_speech_frames(
     sample_rate: int,
     config: dict,
 ) -> np.ndarray:
-    """Return the cleaned per-frame speech decision on the centred frame grid."""
+    """
+    Return the cleaned per-frame speech decision on the centred frame grid.
+    
+    The main frame-level orchestration function. It:
+
+    1. validates the configuration and audio,
+    2. converts configured timing values onto the discrete sample/frame grid,
+    3. calculates frame energies,
+    4. applies the recording-relative energy threshold, and
+    5. cleans the resulting Boolean decisions temporally.
+
+    The returned Boolean array still belongs to this module's energy frame
+    grid. speech_intervals() performs the later conversion to real time.
+    """
 
     _validate_config(
         config
@@ -529,6 +621,10 @@ def speech_intervals(
 ) -> list[tuple[float, float]]:
     """
     Return speech-active intervals in seconds for one recording.
+
+    First obtains the final speech/non-speech decision on the energy frame
+    grid, then converts consecutive speech frames into time intervals that
+    can be used by the other feature extractors.
 
     Raises an error if total detected speech is below the configured
     minimum duration.
