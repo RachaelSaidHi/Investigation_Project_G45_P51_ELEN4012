@@ -8,6 +8,7 @@ are applied separately in exclusion.py.
 import librosa
 import numpy as np
 
+from src.common.frame_energy import frame_energy_db
 from src.preprocessing.audio import TARGET_SAMPLE_RATE
 
 
@@ -19,6 +20,42 @@ HF_CUTOFF_HZ = 4000
 # 64 ms window and 16 ms hop at 16 kHz.
 N_FFT = 1024
 HOP_LENGTH = 256
+
+
+
+# ---------------------------------------------------------------------
+# Persistent-noise floor gap
+#
+# Measures how far the quietest internal frames sit below loud speech.
+# A small gap indicates persistent background energy, such as hum, close
+# enough to the speech level to limit the energy-based speech mask.
+# ---------------------------------------------------------------------
+
+# Same short-time frame grid used when validating the DSP speech mask.
+NOISE_FRAME_LENGTH = int(
+    0.025
+    * TARGET_SAMPLE_RATE
+)
+
+NOISE_HOP_LENGTH = int(
+    0.010
+    * TARGET_SAMPLE_RATE
+)
+
+# P95 was retained after the P90/P95/P99 speech-mask sensitivity check.
+NOISE_REFERENCE_PERCENTILE = 95
+
+# A low percentile allows brief quiet gaps between words to represent the
+# internal floor, while persistent background noise keeps this value high.
+NOISE_FLOOR_PERCENTILE = 2
+
+# Ignore near-silent recording edges by measuring the floor only between
+# the first and last sustained loud regions. Requiring several consecutive
+# frames prevents a single transient or pop from defining the span.
+SPEECH_SPAN_DB = 20.0
+SPEECH_SPAN_MIN_RUN_FRAMES = 5
+
+
 
 
 # ---------------------------------------------------------------------
@@ -178,6 +215,113 @@ def measure_high_frequency_energy(
     )
 
 
+def _speech_span(
+    loud: np.ndarray,
+) -> slice:
+    """Return the frames from the first to the last sustained loud run."""
+
+    # Run starts and ends occur where the Boolean sequence changes value.
+    edges = np.flatnonzero(
+        np.diff(
+            np.concatenate(
+                [
+                    [0],
+                    loud.astype(int),
+                    [0],
+                ]
+            )
+        )
+    )
+
+    starts = edges[
+        0::2
+    ]
+
+    ends = edges[
+        1::2
+    ]
+
+    sustained = (
+        (ends - starts)
+        >= SPEECH_SPAN_MIN_RUN_FRAMES
+    )
+
+    if not sustained.any():
+        raise ValueError(
+            "No sustained loud run found to define the speech span."
+        )
+
+    return slice(
+        starts[sustained][0],
+        ends[sustained][-1],
+    )
+
+
+def measure_noise_floor_gap(
+    audio: np.ndarray,
+) -> float:
+    """Return the gap in dB between loud speech and the internal noise floor."""
+
+    _validate_audio(
+        audio
+    )
+
+    energy_db, all_zero = frame_energy_db(
+        audio,
+        frame_length=NOISE_FRAME_LENGTH,
+        hop_length=NOISE_HOP_LENGTH,
+    )
+
+    if np.all(
+        all_zero
+    ):
+        raise ValueError(
+            "Cannot measure the noise floor of silent audio."
+        )
+
+    # Exact digital silence is not evidence about the recording's background
+    # noise level, so it is excluded when defining the speech reference.
+    reference_db = np.percentile(
+        energy_db[
+            ~all_zero
+        ],
+        NOISE_REFERENCE_PERCENTILE,
+    )
+
+    loud = (
+        (energy_db >= reference_db - SPEECH_SPAN_DB)
+        & ~all_zero
+    )
+
+    span_energy = energy_db[
+        _speech_span(
+            loud
+        )
+    ]
+
+    finite_span_energy = span_energy[
+        np.isfinite(
+            span_energy
+        )
+    ]
+
+    if finite_span_energy.size == 0:
+        raise ValueError(
+            "Cannot measure the noise floor: "
+            "speech span contains no finite frame energies."
+        )
+
+    floor_db = np.percentile(
+        finite_span_energy,
+        NOISE_FLOOR_PERCENTILE,
+    )
+
+    return float(
+        reference_db
+        - floor_db
+    )
+
+
 def estimate_wada_snr(
     audio: np.ndarray,
 ) -> tuple[float, bool]:
@@ -281,4 +425,5 @@ def measure_audio_quality(
         "hf_energy_pct": measure_high_frequency_energy(audio),
         "wada_snr_db": wada_snr_db,
         "wada_snr_saturated": wada_snr_saturated,
+        "floor_gap_db": measure_noise_floor_gap(audio),
     }

@@ -11,6 +11,7 @@ from src.preprocessing.quality import (
     measure_audio_quality,
     measure_duration,
     measure_high_frequency_energy,
+    measure_noise_floor_gap,
 )
 
 
@@ -89,6 +90,80 @@ def make_noisy_speech(
         + noise_scale * noise
     ).astype(np.float32)
 
+def make_speech_with_hum(
+    hum_amplitude,
+    edge_silence_s=0.0,
+):
+    """Generate speech-like tone bursts over a persistent low-frequency hum."""
+
+    duration_s = 4.0
+
+    sample_count = int(
+        TARGET_SAMPLE_RATE
+        * duration_s
+    )
+
+    time = (
+        np.arange(sample_count)
+        / TARGET_SAMPLE_RATE
+    )
+
+    audio = (
+        hum_amplitude
+        * np.sin(
+            2
+            * np.pi
+            * 60
+            * time
+        )
+    )
+
+    speech = (
+        0.5
+        * np.sin(
+            2
+            * np.pi
+            * 200
+            * time
+        )
+    )
+
+    speech_active = (
+        (
+            (time >= 0.4)
+            & (time < 1.2)
+        )
+        | (
+            (time >= 1.7)
+            & (time < 2.5)
+        )
+        | (
+            (time >= 3.0)
+            & (time < 3.6)
+        )
+    )
+
+    audio[
+        speech_active
+    ] += speech[
+        speech_active
+    ]
+
+    if edge_silence_s > 0:
+        edge_samples = int(
+            edge_silence_s
+            * TARGET_SAMPLE_RATE
+        )
+
+        audio = np.pad(
+            audio,
+            edge_samples,
+            mode="constant",
+        )
+
+    return audio.astype(
+        np.float32
+    )
 
 def urgent_reference_wada_snr(
     audio,
@@ -251,6 +326,82 @@ class TestMeasureHighFrequencyEnergy:
                 audio
             )
 
+
+class TestMeasureNoiseFloorGap:
+
+    def test_stronger_persistent_hum_reduces_floor_gap(self):
+        quiet_background = make_speech_with_hum(
+            hum_amplitude=0.001
+        )
+
+        strong_hum = make_speech_with_hum(
+            hum_amplitude=0.05
+        )
+
+        quiet_gap = measure_noise_floor_gap(
+            quiet_background
+        )
+
+        noisy_gap = measure_noise_floor_gap(
+            strong_hum
+        )
+
+        assert noisy_gap < quiet_gap
+
+    def test_near_silent_edges_do_not_hide_internal_hum(self):
+        audio = make_speech_with_hum(
+            hum_amplitude=0.05
+        )
+
+        audio_with_edges = make_speech_with_hum(
+            hum_amplitude=0.05,
+            edge_silence_s=1.0,
+        )
+
+        original_gap = measure_noise_floor_gap(
+            audio
+        )
+
+        edge_gap = measure_noise_floor_gap(
+            audio_with_edges
+        )
+
+        assert edge_gap == pytest.approx(
+            original_gap,
+            abs=0.5,
+        )
+
+    def test_floor_gap_is_unaffected_by_overall_level(self):
+        audio = make_speech_with_hum(
+            hum_amplitude=0.01
+        )
+
+        original_gap = measure_noise_floor_gap(
+            audio
+        )
+
+        quiet_gap = measure_noise_floor_gap(
+            audio * 0.1
+        )
+
+        assert quiet_gap == pytest.approx(
+            original_gap,
+            abs=1e-3,
+        )
+
+    def test_silent_audio_fails(self):
+        audio = np.zeros(
+            TARGET_SAMPLE_RATE,
+            dtype=np.float32,
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="silent audio",
+        ):
+            measure_noise_floor_gap(
+                audio
+            )
 
 class TestEstimateWadaSnr:
 
@@ -424,6 +575,7 @@ class TestMeasureAudioQuality:
             "hf_energy_pct",
             "wada_snr_db",
             "wada_snr_saturated",
+            "floor_gap_db",
         }
 
         assert quality[
@@ -435,6 +587,10 @@ class TestMeasureAudioQuality:
         assert not quality[
             "wada_snr_saturated"
         ]
+
+        assert np.isfinite(
+            quality["floor_gap_db"]
+        )
 
 # run using: 
 # python -m pytest tests/test_preprocessing_quality.py -v
