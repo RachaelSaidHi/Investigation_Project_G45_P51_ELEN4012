@@ -127,6 +127,7 @@ def quality_table(study_manifest):
             "error": "",
             "processed_duration_s": 2.0 if excluded else 12.0,
             "hf_energy_pct": 1.0,
+            "floor_gap_db": 40.0,
             "wada_snr_db": 25.0,
             "wada_snr_saturated": False,
             "exclude": "True" if excluded else "False",
