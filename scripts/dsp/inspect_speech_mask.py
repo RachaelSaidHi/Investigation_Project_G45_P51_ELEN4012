@@ -1003,3 +1003,13 @@ if __name__ == "__main__":
 # python -m scripts.dsp.inspect_speech_mask --overwrite
 # python -m scripts.dsp.inspect_speech_mask --thresholds 30 35 --no-audio
 # python -m scripts.dsp.inspect_speech_mask --run-name percentile_sensitivity --thresholds 30 --percentiles 90 95 99
+
+
+
+
+
+# inspection testing:
+# python -c "import pandas as pd; s = pd.read_csv('results/dsp/speech_mask_tuning/threshold_sweep_01/summary.csv'); 
+# s = s[s['threshold_db'] == 30]; print(s.sort_values('energy_dynamic_range_db')
+# [['sample_id', 'dataset', 'accent_group', 'energy_dynamic_range_db', 'speech_ratio']].head(10).to_string(index=False))"
+
