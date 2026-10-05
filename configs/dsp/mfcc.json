@@ -1,0 +1,21 @@
+{
+  "n_fft": 400,
+  "win_length": 400,
+  "hop_length": 160, 
+  "window": "hamming", 
+  "center": false,
+
+  "n_mels": 40,
+  "fmin": 0,
+  "fmax": 8000, 
+
+  "n_mfcc": 13, 
+  "dct_type": 2,
+  "norm": "ortho",
+  "lifter": 0,
+
+  "power": 2.0,
+
+  "min_speech_frames": 50
+}
+

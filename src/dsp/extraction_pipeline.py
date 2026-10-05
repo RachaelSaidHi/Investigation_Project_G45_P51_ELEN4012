@@ -48,7 +48,7 @@ ENVELOPE_COLUMNS = [
 
 # Columns written after the feature columns
 TRAILING_COLUMNS = [
-    "audio_duration_s", 
+    "processed_duration_s",
     "elapsed_s", 
     "completed_at_utc"
 ]
@@ -173,7 +173,7 @@ def build_success_record(
     manifest_index: int,
     feature_module,
     feature_values: dict,
-    audio_duration_s: float,
+    processed_duration_s: float,
     elapsed_s: float,
 ) -> dict:
     """
@@ -194,7 +194,7 @@ def build_success_record(
  
         **feature_values,
  
-        "audio_duration_s": audio_duration_s,
+        "processed_duration_s": processed_duration_s,
         "elapsed_s": elapsed_s,
         "completed_at_utc": datetime.now(timezone.utc).isoformat(),
     }
@@ -205,7 +205,7 @@ def build_error_record(
     manifest_index: int,
     feature_module,
     error: Exception,
-    audio_duration_s: float | None,
+    processed_duration_s: float | None,
     elapsed_s: float,
 ) -> dict:
     """
@@ -227,7 +227,7 @@ def build_error_record(
         "feature_name": feature_module.FEATURE_NAME,
         "feature_version": feature_module.FEATURE_VERSION,
  
-        "audio_duration_s": audio_duration_s,
+        "processed_duration_s": processed_duration_s,
         "elapsed_s": elapsed_s,
         "completed_at_utc": datetime.now(timezone.utc).isoformat(),
     }
@@ -254,7 +254,7 @@ def process_sample(
     """
  
     start = perf_counter()
-    audio_duration_s = None
+    processed_duration_s = None
  
     # Anything that goes wrong while loading or extracting is a problem
     # with this sample, so it becomes an error row and the run continues.
@@ -264,7 +264,7 @@ def process_sample(
             str(row["processed_filepath"]),
         )
  
-        audio_duration_s = len(audio) / TARGET_SAMPLE_RATE
+        processed_duration_s = len(audio) / TARGET_SAMPLE_RATE
  
         values = feature_module.extract(
             audio,
@@ -279,7 +279,7 @@ def process_sample(
             manifest_index=manifest_index,
             feature_module=feature_module,
             error=error,
-            audio_duration_s=audio_duration_s,
+            processed_duration_s=processed_duration_s,
             elapsed_s=perf_counter() - start,
         )
  
@@ -304,7 +304,7 @@ def process_sample(
             manifest_index=manifest_index,
             feature_module=feature_module,
             error=ValueError(f"Non-finite feature values in: {bad_columns}"),
-            audio_duration_s=audio_duration_s,
+            processed_duration_s=processed_duration_s,
             elapsed_s=perf_counter() - start,
         )
  
@@ -318,7 +318,7 @@ def process_sample(
         manifest_index=manifest_index,
         feature_module=feature_module,
         feature_values=feature_values,
-        audio_duration_s=audio_duration_s,
+        processed_duration_s=processed_duration_s,
         elapsed_s=perf_counter() - start,
     )
 
