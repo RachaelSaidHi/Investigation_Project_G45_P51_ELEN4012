@@ -1,12 +1,11 @@
 """Preprocess audio and calculate quality-control measurements.
 
 Each recording is converted to 16 kHz mono audio and written to
-data/processed/audio/. Quality measurements and the current provisional
-exclusion decisions are written to a QC table named after the input
-manifest.
+data/processed/audio/.  Quality measurements and exclusion decisions are
+written to a QC table named after the input manifest.
 
 The input manifest is not modified. The final analysis manifest is built
-later, after the QC rules have been reviewed and frozen.
+later from recordings that pass the quality-control rules.
 
 Run from project root:
     python -m scripts.preprocessing.preprocess_audio
@@ -410,6 +409,37 @@ def print_summary(
     )
 
     section(
+        "Noise-floor gap of recordings passing current QC rules"
+    )
+
+    print(
+        included
+        .groupby(
+            GROUP_COLUMNS
+        )
+        .agg(
+            files=(
+                "sample_id",
+                "size",
+            ),
+            minimum=(
+                "floor_gap_db",
+                "min",
+            ),
+            median=(
+                "floor_gap_db",
+                "median",
+            ),
+            maximum=(
+                "floor_gap_db",
+                "max",
+            ),
+        )
+        .round(2)
+        .to_string()
+    )
+
+    section(
         "Lowest 10 WADA-SNR estimates passing current QC rules"
     )
 
@@ -544,8 +574,8 @@ def main() -> None:
             "Exclusion rules were not applied."
         )
 
-    # These decisions are provisional. The measurements are retained so that
-    # the final rules can later be reapplied without regenerating the audio.
+    # Apply the QC policy to the measured recording properties. Measurements
+    # are retained so that every exclusion decision remains auditable.
     quality = apply_exclusion_rules(
         quality
     )

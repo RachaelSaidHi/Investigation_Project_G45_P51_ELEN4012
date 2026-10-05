@@ -24,5 +24,8 @@ praat-parselmouth
 # Results
 matplotlib
 
+# DSP
+matplotlib==3.11.2
+
 # PyTorch is installed separately depending on whether CPU or GPU
 # execution is required. See README for installation instructions.

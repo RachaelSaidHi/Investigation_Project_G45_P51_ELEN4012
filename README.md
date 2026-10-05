@@ -150,7 +150,7 @@ python -m scripts.preprocessing.preprocess_audio --overwrite
 
 ### Quality control
 
-Recordings are excluded if their duration is outside 5–60 seconds or they contain less than 0.05% spectral energy above 4 kHz. WADA-SNR is measured for diagnostic purposes but is not used for exclusion.
+Recordings are excluded if their duration is outside 5–60 seconds, they contain less than 0.05% spectral energy above 4 kHz, or their persistent-noise floor gap is below 25 dB. WADA-SNR is measured for diagnostic purposes but is not used for exclusion.
 
 ### Analysis selection
 
@@ -209,7 +209,7 @@ row = manifest.iloc[0]
 audio_path = PROCESSED_ROOT / row["processed_filepath"]
 ```
 
-## 7. Testing
+## 8. Testing
 
 All tests should be run from the repository root with the virtual environment activated.
 
@@ -219,6 +219,7 @@ The current test suite covers:
 | --- | --- |
 | `test_afrispeech_loader.py` | AfriSpeech dataset loading |
 | `test_analysis_manifest.py` | Analysis-manifest generation and validation |
+| `test_audio_io.py` | Processed-audio loading and validation |
 | `test_dev_manifest.py` | Development-manifest generation |
 | `test_metrics.py` | WER calculation and substitution/deletion/insertion counts |
 | `test_normalization.py` | Transcript normalization |
@@ -231,6 +232,7 @@ The current test suite covers:
 | `test_scoring_pipeline.py` | Scoring-pipeline validation, normalization/WER orchestration, statuses and error handling |
 | `test_select_afrispeech.py` | Selection and filtering of AfriSpeech samples |
 | `test_select_analysis.py` | Selection of samples for the analysis dataset |
+| `test_speech_mask.py` | Shared DSP speech-mask calculation, temporal smoothing and interval handling |
 | `test_select_saa.py` | Selection and filtering of Speech Accent Archive samples |
 | `test_study_manifest.py` | Study-manifest generation |
 | `test_transcription_pipeline.py` | Manifest-level transcription, checkpointing, resume/retry behaviour and error handling |
@@ -325,7 +327,7 @@ $env:RUN_WHISPER_INTEGRATION="1"
 python -m pytest -v
 ```
 
-## 8. Project Repo Structure
+## 9. Project Repo Structure
 ```
 project/
 │
@@ -336,7 +338,10 @@ project/
 ├── configs/                     # acquisition and other project configurations
 │
 ├── src/                        # contains the core code and functions
-│   | 
+│   │ 
+│   ├── common/
+│   │   └── .py files
+│   │ 
 │   ├── data/
 │   │   └── .py files
 │   │
@@ -356,7 +361,8 @@ project/
 │   ├── inspection/              # exploratory data/audio inspection scripts
 │   ├── data/                    # data acquisition and manifest-building scripts
 │   ├── preprocessing/           # audio preprocessing and QC scripts
-│   └── asr/
+│   ├── asr/
+│   └── dsp/
 │
 ├── data/
 │   ├── raw/                    # GITIGNORED
@@ -375,3 +381,120 @@ project/
 └── third_party/                # licenses / references for third party adapted code
 
 ```
+
+
+
+
+## Using the shared audio loader and speech mask
+
+### Load processed audio
+
+Processed audio should be loaded with `load_processed_audio()`:
+
+```python
+from pathlib import Path
+
+import pandas as pd
+
+from src.common.audio_io import (
+    SAMPLE_RATE,
+    load_processed_audio,
+)
+
+
+PROCESSED_ROOT = Path("data/processed")
+
+manifest = pd.read_csv(
+    "data/manifests/analysis_manifest.csv",
+    keep_default_na=False,
+)
+
+row = manifest.iloc[0]
+
+audio = load_processed_audio(
+    PROCESSED_ROOT,
+    row["processed_filepath"],
+)
+```
+
+`load_processed_audio()` returns the validated processed waveform as a one-dimensional NumPy array:
+
+```text
+np.ndarray
+```
+
+`audio` therefore contains the audio samples for the recording. The loader checks the expected processed-audio format and does not resample, normalise or trim the signal.
+
+### Get the shared speech intervals
+
+Use `speech_intervals()` to obtain the speech-active regions for the recording:
+
+```python
+import json
+from pathlib import Path
+
+from src.dsp.speech_mask import speech_intervals
+
+
+CONFIG_PATH = Path("configs/dsp/speech_mask.json")
+
+with CONFIG_PATH.open("r", encoding="utf-8") as file:
+    speech_mask_config = json.load(file)
+
+intervals = speech_intervals(
+    audio=audio,
+    sample_rate=SAMPLE_RATE,
+    config=speech_mask_config,
+)
+```
+
+`speech_intervals()` returns a Python list of `(start_s, end_s)` tuples:
+
+```text
+list[tuple[float, float]]
+```
+
+For example:
+
+```text
+[
+    (0.42, 3.18),
+    (3.31, 7.84),
+]
+```
+
+Each tuple represents one detected speech-active region, with the start and end times given in seconds.
+
+### Apply the speech mask to feature timestamps
+
+Feature extractors should run on the full waveform first. Their frame timestamps can then be matched to the shared speech intervals:
+
+```python
+from src.dsp.speech_mask import speech_mask_for_times
+
+speech_mask = speech_mask_for_times(
+    intervals=intervals,
+    times=feature_times,
+)
+
+speech_features = features[speech_mask]
+```
+
+`speech_mask_for_times()` returns a one-dimensional Boolean NumPy array:
+
+```text
+np.ndarray[bool]
+```
+
+It has one Boolean value for each value in `feature_times`:
+
+- `True` — the feature frame falls inside a speech-active interval.
+- `False` — the feature frame falls outside the speech-active intervals.
+
+The Boolean mask can then be used to select the corresponding speech frames from the feature array:
+
+```python
+speech_features = features[speech_mask]
+```
+
+This allows MFCC, pitch, formant and other DSP features to use the same speech definition even when their frame grids differ.

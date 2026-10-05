@@ -33,9 +33,9 @@ Thumbs.db__pycache__
 src/asr/*.mp3
 
 # Results
-results/asr
-results/dsp
-results/analysis
+results/asr/
+results/analysis/
+results/dsp/
 
 # inspection files
 # inspection/
@@ -45,3 +45,7 @@ scripts/inspection/results
 build_dev_manifest_without_afrispeech.py
 test_dev_manifest_without_afrispeech.py
 test_dev_manifest_old_from_study_manifest.py
+
+# extra dsp experimentation stuff
+speech_mask_floor_labels.csv
+check_speech_mask_prevalence_old.py

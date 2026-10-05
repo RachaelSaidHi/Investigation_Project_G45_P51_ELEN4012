@@ -11,22 +11,26 @@ import pandas as pd
 MIN_DURATION_S = 5.0
 MAX_DURATION_S = 60.0
 MIN_HF_ENERGY_PCT = 0.05
+MIN_FLOOR_GAP_DB = 25.0
 
 REASON_DURATION_TOO_SHORT = "duration_too_short"
 REASON_DURATION_TOO_LONG = "duration_too_long"
 REASON_BANDWIDTH_TOO_LOW = "bandwidth_too_low"
+REASON_PERSISTENT_NOISE_FLOOR_TOO_HIGH = "persistent_noise_floor_too_high"
 
 REASON_SEPARATOR = ";"
 
 REQUIRED_QUALITY_COLUMNS = [
     "processed_duration_s",
     "hf_energy_pct",
+    "floor_gap_db",
 ]
 
 
 def get_exclusion_reasons(
     duration_s: float,
     hf_energy_pct: float,
+    floor_gap_db: float,
 ) -> list[str]:
     """Return all QC exclusion reasons that apply to one recording."""
 
@@ -47,12 +51,18 @@ def get_exclusion_reasons(
             REASON_BANDWIDTH_TOO_LOW
         )
 
+    if floor_gap_db < MIN_FLOOR_GAP_DB:
+        reasons.append(
+            REASON_PERSISTENT_NOISE_FLOOR_TOO_HIGH
+        )
+    
     return reasons
 
 
 def should_exclude(
     duration_s: float,
     hf_energy_pct: float,
+    floor_gap_db: float,
 ) -> bool:
     """Return whether a recording fails any current QC rule."""
 
@@ -60,6 +70,7 @@ def should_exclude(
         get_exclusion_reasons(
             duration_s,
             hf_energy_pct,
+            floor_gap_db,
         )
     )
 
@@ -94,10 +105,12 @@ def apply_exclusion_rules(
         get_exclusion_reasons(
             duration_s,
             hf_energy_pct,
+            floor_gap_db,
         )
-        for duration_s, hf_energy_pct in zip(
+        for duration_s, hf_energy_pct, floor_gap_db in zip(
             quality["processed_duration_s"],
             quality["hf_energy_pct"],
+            quality["floor_gap_db"],
         )
     ]
 
