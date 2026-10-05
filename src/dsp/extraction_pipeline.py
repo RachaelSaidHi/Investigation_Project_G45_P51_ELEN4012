@@ -28,11 +28,13 @@ from src.common.run_management import (
     save_results_atomic,
     upsert_result
 )
-from src.preprocessing.audio import TARGET_SAMPLE_RATE
 
-
+from src.common.audio_io import (
+    SAMPLE_RATE,
+)
 
 AudioLoader = Callable[[Path, str], np.ndarray]
+
 
 # Columns written before the feature columns
 ENVELOPE_COLUMNS = [
@@ -261,14 +263,14 @@ def process_sample(
     try:
         audio = load_audio(
             processed_root,
-            str(row["processed_filepath"]),
+            str(row["processed_filepath"])
         )
  
-        processed_duration_s = len(audio) / TARGET_SAMPLE_RATE
+        processed_duration_s = len(audio) / SAMPLE_RATE
  
         values = feature_module.extract(
             audio,
-            TARGET_SAMPLE_RATE,
+            SAMPLE_RATE,
             row,
             config,
         )

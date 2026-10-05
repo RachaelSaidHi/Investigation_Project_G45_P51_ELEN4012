@@ -3,7 +3,7 @@
   "win_length": 400,
   "hop_length": 160, 
   "window": "hamming", 
-  "center": false,
+  "center": true,
 
   "n_mels": 40,
   "fmin": 0,

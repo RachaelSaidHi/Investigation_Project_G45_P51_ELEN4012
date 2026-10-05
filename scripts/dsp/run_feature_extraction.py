@@ -44,13 +44,14 @@ from pathlib import Path
 import argparse
 import importlib
  
-import numpy as np
 import pandas as pd
-import soundfile as sf
  
 from src.common.run_management import file_sha256, prepare_run_directory
 from src.dsp.extraction_pipeline import run_feature_manifest, validate_feature_module
-from src.preprocessing.audio import TARGET_SAMPLE_RATE
+
+from src.common.audio_io import (
+    load_processed_audio
+)
 
 
 FEATURES_PACKAGE = "src.dsp.features"
@@ -90,33 +91,33 @@ RECORDED_PACKAGES = [
 
 
 # Audio loading
-def temporary_loader(processed_root: Path, processed_filepath: str) -> np.ndarray:
-    """
-    Load one processed WAV as a mono 16 kHz float32 array.
+# def temporary_loader(processed_root: Path, processed_filepath: str) -> np.ndarray:
+#     """
+#     Load one processed WAV as a mono 16 kHz float32 array.
  
-    Stand-in until audio_io.load_processed_audio is available. It refuses
-    files that are not 16 kHz mono rather than resampling them, so every
-    feature analyses exactly the audio produced by preprocessing.
+#     Stand-in until audio_io.load_processed_audio is available. It refuses
+#     files that are not 16 kHz mono rather than resampling them, so every
+#     feature analyses exactly the audio produced by preprocessing.
  
-    TODO: replace with load_processed_audio from src/common/audio_io.py.
-    """
+#     TODO: replace with load_processed_audio from src/common/audio_io.py.
+#     """
  
-    audio, sample_rate = sf.read(
-        processed_root / processed_filepath,
-        dtype="float32",
-    )
+#     audio, sample_rate = sf.read(
+#         processed_root / processed_filepath,
+#         dtype="float32",
+#     )
  
-    if sample_rate != TARGET_SAMPLE_RATE:
-        raise ValueError(
-            f"Expected {TARGET_SAMPLE_RATE} Hz audio, got {sample_rate} Hz."
-        )
+#     if sample_rate != TARGET_SAMPLE_RATE:
+#         raise ValueError(
+#             f"Expected {TARGET_SAMPLE_RATE} Hz audio, got {sample_rate} Hz."
+#         )
  
-    if audio.ndim != 1:
-        raise ValueError(
-            f"Expected mono audio, got {audio.shape[1]} channels."
-        )
+#     if audio.ndim != 1:
+#         raise ValueError(
+#             f"Expected mono audio, got {audio.shape[1]} channels."
+#         )
  
-    return audio
+#     return audio
 
 
 
@@ -295,7 +296,7 @@ def run_one_feature(feature_name: str, args) -> pd.DataFrame:
         config=config,
         processed_root=args.processed_root,
         results_path=results_path,
-        load_audio=temporary_loader,
+        load_audio=load_processed_audio,
         retry_errors=args.retry_errors,
         fail_fast=args.fail_fast,
     )

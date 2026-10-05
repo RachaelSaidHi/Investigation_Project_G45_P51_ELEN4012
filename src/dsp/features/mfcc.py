@@ -1,20 +1,65 @@
 import librosa
 import numpy as np
 
+from src.dsp.speech_mask import (
+    speech_intervals,
+    speech_mask_for_times,
+)
+
 FEATURE_NAME = "mfcc"
-FEATURE_VERSION = "1"
+FEATURE_VERSION = "2"
+
+STATS = ("mean", "std")
+
+# Errors from speech_intervals() that mean "no usable speech" (a deterministic
+# exclusion), as opposed to a genuine failure that should be retried.
+SPEECH_EXCLUSION_MESSAGES = (
+    "Insufficient speech",
+    "Audio contains only digital silence",
+)
+
+class TooFewSpeechFrames(ValueError):
+    """
+    Deterministic exclusion (no usable speech).
+    """
 
 def feature_columns(config):
     n = config["feature"]["n_mfcc"]
     return [
         f"mfcc_{i:02d}_{stat}"
         for i in range(n)
-        for stat in ("mean", "var")
+        for stat in STATS
     ]
 
-def extract(audio, sample_rate, row, config):
+def extract(
+    audio,
+    sample_rate,
+    row,
+    config,
+):
+    
     settings = config["feature"]
+    
+    if not isinstance(settings["center"], bool):
+        raise TypeError(f"'center' must be true/false, got {settings['center']!r}.")
+    if settings["power"] != 2.0:
+        raise ValueError("power must be 2.0: librosa.feature.mfcc(y=...) always applies power_to_db.")
 
+    # Detect shared speech-active intervals
+    # Done early so clips with no usable audio fail fast          
+    try:
+        intervals = speech_intervals(
+            audio=audio, 
+            sample_rate=sample_rate, 
+            config=config["speech_mask"]
+        )
+    except ValueError as error:
+        if str(error).startswith(SPEECH_EXCLUSION_MESSAGES):
+            raise TooFewSpeechFrames(str(error)) from error
+        raise
+
+
+    # Extract MFCCs over the full waveform
     # shape: (n_mfcc, n_frames)
     mfcc = librosa.feature.mfcc(
         y=audio,
@@ -38,18 +83,52 @@ def extract(audio, sample_rate, row, config):
         dct_type=settings["dct_type"],
         norm=settings["norm"],
         lifter=settings["lifter"],
-    )                                          
+    )                 
 
-    # TODO: replace with the shared speech mask once speech_mask.py is merged
-    speech = np.ones(mfcc.shape[1], dtype=bool)
+
+    # Determine the centre time of every MFCC frame, to match 
+    # against the speech intervals.
+    frame_numbers = np.arange(mfcc.shape[1])       
+
+    if settings["center"]:
+        feature_times = librosa.frames_to_time(
+            frame_numbers,
+            sr=sample_rate,
+            hop_length=settings["hop_length"]
+        )
+    else:
+        feature_times = librosa.frames_to_time(
+            frame_numbers,
+            sr=sample_rate,
+            hop_length=settings["hop_length"],
+            n_fft=settings["n_fft"]
+        )    
+
+
+    # Map the shared speech intervals onto the MFCC frame grid
+    speech = speech_mask_for_times(
+        intervals=intervals, 
+        times=feature_times
+    )
 
     frames = mfcc[:, speech]
-    
-    if frames.shape[1] < settings["min_speech_frames"]:
-        raise ValueError(f"Only {frames.shape[1]} speech frames (minimum {settings['min_speech_frames']}).")
 
+    if frames.shape[1] < settings["min_speech_frames"]:
+        raise ValueError(
+            f"Only {frames.shape[1]} MFCC speech frames "
+            f"(minimum {settings['min_speech_frames']})."
+        )
+
+    # Summarise speech-active MFCC frames
     values = {}
+
     for i in range(frames.shape[0]):
-        values[f"mfcc_{i:02d}_mean"] = float(frames[i].mean())
-        values[f"mfcc_{i:02d}_var"] = float(frames[i].var())
+        values[f"mfcc_{i:02d}_mean"] = float(
+            frames[i].mean()
+        )
+
+        values[f"mfcc_{i:02d}_std"] = float(
+            frames[i].std()
+        )
+
     return values
