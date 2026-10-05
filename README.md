@@ -417,7 +417,13 @@ audio = load_processed_audio(
 )
 ```
 
-`audio` is the validated processed waveform. The loader checks the expected processed-audio format and does not resample, normalise or trim the signal.
+`load_processed_audio()` returns the validated processed waveform as a one-dimensional NumPy array:
+
+```text
+np.ndarray
+```
+
+`audio` therefore contains the audio samples for the recording. The loader checks the expected processed-audio format and does not resample, normalise or trim the signal.
 
 ### Get the shared speech intervals
 
@@ -442,7 +448,22 @@ intervals = speech_intervals(
 )
 ```
 
-`intervals` contains the shared speech-active time regions in seconds.
+`speech_intervals()` returns a Python list of `(start_s, end_s)` tuples:
+
+```text
+list[tuple[float, float]]
+```
+
+For example:
+
+```text
+[
+    (0.42, 3.18),
+    (3.31, 7.84),
+]
+```
+
+Each tuple represents one detected speech-active region, with the start and end times given in seconds.
 
 ### Apply the speech mask to feature timestamps
 
@@ -450,7 +471,6 @@ Feature extractors should run on the full waveform first. Their frame timestamps
 
 ```python
 from src.dsp.speech_mask import speech_mask_for_times
-
 
 speech_mask = speech_mask_for_times(
     intervals=intervals,
@@ -460,6 +480,21 @@ speech_mask = speech_mask_for_times(
 speech_features = features[speech_mask]
 ```
 
-Here, `feature_times` should contain the timestamp of each feature frame, and `features` should contain the corresponding feature values.
+`speech_mask_for_times()` returns a one-dimensional Boolean NumPy array:
+
+```text
+np.ndarray[bool]
+```
+
+It has one Boolean value for each value in `feature_times`:
+
+- `True` — the feature frame falls inside a speech-active interval.
+- `False` — the feature frame falls outside the speech-active intervals.
+
+The Boolean mask can then be used to select the corresponding speech frames from the feature array:
+
+```python
+speech_features = features[speech_mask]
+```
 
 This allows MFCC, pitch, formant and other DSP features to use the same speech definition even when their frame grids differ.
