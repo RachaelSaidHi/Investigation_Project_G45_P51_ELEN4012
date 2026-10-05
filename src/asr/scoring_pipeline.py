@@ -51,7 +51,6 @@ RESULT_COLUMNS = [
     "reference_norm",
     "hypothesis_norm",
 
-    # TODO: I don't think this is good to have since the reference has no written out punctuation
     # Dataset-specific punctuation diagnostics
     "n_punctuation_reference",
     "n_punctuation_hypothesis",
@@ -69,7 +68,6 @@ RESULT_COLUMNS = [
 ]
 
 
-# TODO: remove duplicate code between this and transcription_pipeline, make a helper
 def validate_manifest(manifest: pd.DataFrame) -> None:
     """
     Validate the minimum manifest fields required for scoring.
@@ -223,19 +221,23 @@ def build_error_record(row, error: Exception = None) -> dict:
     return record
     
 
-def score_sample(row) -> dict:
+def score_sample(row, drop_punctuation_words: bool = True) -> dict:
     """
     Normalize and score one successfully transcribed sample.
 
     The input row is expected to contain fields from both the manifest and the transcription results.
     """
 
-    reference_norm, reference_punctuation = (
-        normalize_text(row["reference_transcript"], row["dataset"])
-        )
+    reference_norm, reference_punctuation = normalize_text(
+        row["reference_transcript"],
+        row["dataset"],
+        drop_punctuation_words=drop_punctuation_words,
+    )
 
-    hypothesis_norm, hypothesis_punctuation = (
-        normalize_text(row["transcription_raw"], row["dataset"],)
+    hypothesis_norm, hypothesis_punctuation = normalize_text(
+        row["transcription_raw"],
+        row["dataset"],
+        drop_punctuation_words=drop_punctuation_words,
     )
 
     base_record = {
@@ -287,6 +289,7 @@ def run_scoring(
     manifest: pd.DataFrame,
     transcriptions: pd.DataFrame,
     fail_fast: bool = False,
+    drop_punctuation_words: bool = True,
 ) -> pd.DataFrame:
     """
     Normalize and score transcription results against the manifest.
@@ -363,7 +366,7 @@ def run_scoring(
 
         # Successful Whisper output: normalize and calculate WER.
         try:
-            record = score_sample(row)
+            record = score_sample(row, drop_punctuation_words=drop_punctuation_words)
 
             if record["scoring_status"] == "ok":
                 print(f"\tOK | WER = {record['wer']:.4f}")

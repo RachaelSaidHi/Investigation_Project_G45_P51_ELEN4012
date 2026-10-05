@@ -35,6 +35,7 @@ src/asr/*.mp3
 # Results
 results/asr
 results/dsp
+results/analysis
 
 # inspection files
 # inspection/

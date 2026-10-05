@@ -281,7 +281,11 @@ def run_one_feature(feature_name: str, args) -> pd.DataFrame:
     # Always use the run's own snapshot so a resumed run processes exactly
     # the same samples. Blank cells are read as "" to match the manifest
     # builders.
-    manifest = pd.read_csv(manifest_snapshot_path, keep_default_na=False)
+    manifest = pd.read_csv(
+        manifest_snapshot_path,
+        keep_default_na=False,
+        dtype={"sample_id": str},
+)
 
     results_path = run_dir / RESULTS_FILE_NAME
     

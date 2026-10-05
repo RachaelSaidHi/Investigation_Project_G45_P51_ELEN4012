@@ -61,7 +61,6 @@ RESULT_COLUMNS = [
     "completed_at_utc",
 ]
 
-# TODO: can make a helper function that can be called for DSP or transcription pipeline to check correct columns are there
 # Only keep any transcription specific validation needed
 def validate_manifest(manifest: pd.DataFrame) -> None:
     """
