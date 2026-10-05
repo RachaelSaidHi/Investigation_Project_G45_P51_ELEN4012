@@ -14,8 +14,6 @@
   "norm": "ortho",
   "lifter": 0,
 
-  "power": 2.0,
-
-  "min_speech_frames": 50
+  "power": 2.0
 }
 

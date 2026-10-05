@@ -7,7 +7,7 @@ from src.dsp.speech_mask import (
 )
 
 FEATURE_NAME = "mfcc"
-FEATURE_VERSION = "2"
+FEATURE_VERSION = "3"
 
 STATS = ("mean", "std")
 
@@ -18,9 +18,10 @@ SPEECH_EXCLUSION_MESSAGES = (
     "Audio contains only digital silence",
 )
 
-class TooFewSpeechFrames(ValueError):
+class NoUsableSpeech(ValueError):
     """
-    Deterministic exclusion (no usable speech).
+    Deterministic exclusion because the recording contains
+    insufficient usable speech.
     """
 
 def feature_columns(config):
@@ -41,9 +42,13 @@ def extract(
     settings = config["feature"]
     
     if not isinstance(settings["center"], bool):
-        raise TypeError(f"'center' must be true/false, got {settings['center']!r}.")
+        raise TypeError(
+            f"'center' must be true/false, got {settings['center']!r}."
+        )
     if settings["power"] != 2.0:
-        raise ValueError("power must be 2.0: librosa.feature.mfcc(y=...) always applies power_to_db.")
+        raise ValueError(
+            "power must be 2.0 for the fixed MFCC extraction configuration."
+        )
 
     # Detect shared speech-active intervals
     # Done early so clips with no usable audio fail fast          
@@ -55,7 +60,7 @@ def extract(
         )
     except ValueError as error:
         if str(error).startswith(SPEECH_EXCLUSION_MESSAGES):
-            raise TooFewSpeechFrames(str(error)) from error
+            raise NoUsableSpeech(str(error)) from error
         raise
 
 
@@ -113,10 +118,9 @@ def extract(
 
     frames = mfcc[:, speech]
 
-    if frames.shape[1] < settings["min_speech_frames"]:
-        raise ValueError(
-            f"Only {frames.shape[1]} MFCC speech frames "
-            f"(minimum {settings['min_speech_frames']})."
+    if frames.shape[1] == 0:
+        raise NoUsableSpeech(
+            "No MFCC frames fall inside the detected speech intervals."
         )
 
     # Summarise speech-active MFCC frames
