@@ -31,7 +31,7 @@ from src.dsp.text_syllables import count_text_syllables
 
 
 FEATURE_NAME = "speech_rate_reference"
-FEATURE_VERSION = "0"
+FEATURE_VERSION = "1"
 
 
 SPEECH_EXCLUSION_MESSAGES = (
