@@ -112,10 +112,10 @@ def _validate_config(pitch_config: dict) -> None:
     if (
         not isinstance(max_candidates, int)
         or isinstance(max_candidates, bool)
-        or max_candidates < 1
+        or max_candidates < 2
     ):
         raise ValueError(
-            "max_number_of_candidates must be a positive integer."
+            "max_number_of_candidates must be an integer of at least 2."
         )
 
     if not isinstance(
@@ -186,6 +186,15 @@ def extract_pitch_track(
         pitch_config
     )
 
+    # Speech detector runs on the complete waveform.
+    # Intervals are used only to decide which Praat frames contribute
+    # to the recording-level pitch summaries.
+    intervals = speech_intervals(
+        audio=audio,
+        sample_rate=sample_rate,
+        config=speech_mask_config,
+    )
+
     # Praat analyses the complete waveform so its pitch-path search retains
     # the natural temporal context across the recording.
     sound = parselmouth.Sound(
@@ -194,15 +203,6 @@ def extract_pitch_track(
             dtype=np.float64,
         ),
         sampling_frequency=float(sample_rate),
-    )
-
-    # Speech detector runs on the same complete waveform.
-    # Its intervals are used only to decide which Praat frames contribute
-    # to the recording-level pitch summaries.
-    intervals = speech_intervals(
-        audio=audio,
-        sample_rate=sample_rate,
-        config=speech_mask_config,
     )
 
     pitch = sound.to_pitch_ac(
