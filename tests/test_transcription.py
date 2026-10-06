@@ -10,7 +10,6 @@ import os
 import numpy as np
 import pytest
 import torch
-import soundfile as sf
 
 import src.asr.transcribe as transcribe_module
 from src.asr.transcribe import (
@@ -18,7 +17,6 @@ from src.asr.transcribe import (
     SAMPLE_RATE,
     TranscriptionResult,
     WhisperTranscriber,
-    load_audio,
 )
 
 # A dummy whisper object is used so that the code's behaviour around Whisper can be tested 
@@ -99,19 +97,20 @@ def whisper_mocks(monkeypatch):
     }
 
 
+def make_audio(duration_s: float = 10.0) -> np.ndarray:
+    return np.zeros(
+        int(duration_s * SAMPLE_RATE),
+        dtype=np.float32,
+    )
+
+
 @pytest.fixture
-def make_transcriber(whisper_mocks, monkeypatch):
-    """
-    Create a mocked WhisperTranscriber with a chosen duration and decoding mode.
-    """
+def make_transcriber(whisper_mocks):
 
-    def _make(duration_s=10.0, decode_mode="short_form", model_name="openai/whisper-small"):
-        monkeypatch.setattr(
-            transcribe_module,
-            "load_audio",
-            lambda _: (np.zeros(10, dtype=np.float32), duration_s),
-        )
-
+    def _make(
+        decode_mode="short_form",
+        model_name="openai/whisper-small",
+    ):
         return WhisperTranscriber(
             model_name=model_name,
             device="cpu",
@@ -121,114 +120,136 @@ def make_transcriber(whisper_mocks, monkeypatch):
     return _make
 
 
+# @pytest.fixture
+# def make_transcriber(whisper_mocks, monkeypatch):
+#     """
+#     Create a mocked WhisperTranscriber with a chosen duration and decoding mode.
+#     """
+
+#     def _make(duration_s=10.0, decode_mode="short_form", model_name="openai/whisper-small"):
+#         monkeypatch.setattr(
+#             transcribe_module,
+#             "load_audio",
+#             lambda _: (np.zeros(10, dtype=np.float32), duration_s),
+#         )
+
+#         return WhisperTranscriber(
+#             model_name=model_name,
+#             device="cpu",
+#             decode_mode=decode_mode,
+#         )
+
+#     return _make
+
+
 # TODO: if this gets moved to a preprocessing file then move these tests as well
-class TestLoadAudio:
+# class TestLoadAudio:
 
-    def test_none_filepath_fails(self):
-        with pytest.raises(ValueError):
-            load_audio(None)
+#     def test_none_filepath_fails(self):
+#         with pytest.raises(ValueError):
+#             load_audio(None)
 
-    def test_empty_filepath_fails(self):
-        with pytest.raises(ValueError):
-            load_audio("")
+#     def test_empty_filepath_fails(self):
+#         with pytest.raises(ValueError):
+#             load_audio("")
 
-    def test_missing_file_fails(self, tmp_path):
-        missing = tmp_path / "missing.wav"
+#     def test_missing_file_fails(self, tmp_path):
+#         missing = tmp_path / "missing.wav"
 
-        with pytest.raises(FileNotFoundError):
-            load_audio(str(missing))
+#         with pytest.raises(FileNotFoundError):
+#             load_audio(str(missing))
 
-    def test_directory_fails(self, tmp_path):
-        with pytest.raises(ValueError):
-            load_audio(str(tmp_path))
+#     def test_directory_fails(self, tmp_path):
+#         with pytest.raises(ValueError):
+#             load_audio(str(tmp_path))
 
-    def test_empty_audio_fails(self, tmp_path, monkeypatch):
-        audio_file = tmp_path / "empty.wav"
-        audio_file.touch()
+#     def test_empty_audio_fails(self, tmp_path, monkeypatch):
+#         audio_file = tmp_path / "empty.wav"
+#         audio_file.touch()
 
-        monkeypatch.setattr(
-            transcribe_module.librosa,
-            "load",
-            Mock(return_value = (np.array([], dtype=np.float32), SAMPLE_RATE)),
-        )
+#         monkeypatch.setattr(
+#             transcribe_module.librosa,
+#             "load",
+#             Mock(return_value = (np.array([], dtype=np.float32), SAMPLE_RATE)),
+#         )
 
-        with pytest.raises(ValueError, match="Audio file is empty"):
-            load_audio(str(audio_file))
+#         with pytest.raises(ValueError, match="Audio file is empty"):
+#             load_audio(str(audio_file))
 
-    def test_duration_calculated_from_resampled_audio(self, tmp_path, monkeypatch):
-        audio_file = tmp_path / "sample.wav"
-        audio_file.touch()
+#     def test_duration_calculated_from_resampled_audio(self, tmp_path, monkeypatch):
+#         audio_file = tmp_path / "sample.wav"
+#         audio_file.touch()
 
-        # Exactly two seconds at 16 kHz.
-        audio = np.zeros(
-            2 * SAMPLE_RATE,
-            dtype = np.float32,
-        )
+#         # Exactly two seconds at 16 kHz.
+#         audio = np.zeros(
+#             2 * SAMPLE_RATE,
+#             dtype = np.float32,
+#         )
 
-        mock_load = Mock(return_value = (audio, SAMPLE_RATE))
+#         mock_load = Mock(return_value = (audio, SAMPLE_RATE))
 
-        monkeypatch.setattr(
-            transcribe_module.librosa,
-            "load",
-            mock_load,
-        )
+#         monkeypatch.setattr(
+#             transcribe_module.librosa,
+#             "load",
+#             mock_load,
+#         )
 
-        loaded_audio, duration_s = load_audio(str(audio_file))
+#         loaded_audio, duration_s = load_audio(str(audio_file))
 
-        assert len(loaded_audio) == 2 * SAMPLE_RATE
-        assert duration_s == pytest.approx(2.0)
+#         assert len(loaded_audio) == 2 * SAMPLE_RATE
+#         assert duration_s == pytest.approx(2.0)
 
-        mock_load.assert_called_once_with(str(audio_file), sr=SAMPLE_RATE, mono=True,)
+#         mock_load.assert_called_once_with(str(audio_file), sr=SAMPLE_RATE, mono=True,)
 
-    def test_load_audio_resamples_and_downmixes(self, tmp_path):
-            """
-            A stereo 44.1 kHz audio must become mono 16 kHz audio with the same duration.
-            """
-            original_sr = 44100
-            duration_s = 2.0
-            path = tmp_path / "stereo.wav"
+#     def test_load_audio_resamples_and_downmixes(self, tmp_path):
+#             """
+#             A stereo 44.1 kHz audio must become mono 16 kHz audio with the same duration.
+#             """
+#             original_sr = 44100
+#             duration_s = 2.0
+#             path = tmp_path / "stereo.wav"
 
-            # Fake test audio is 44.1 kHz for 2s on 2 channels
-            stereo = np.zeros((int(original_sr * duration_s), 2), dtype=np.float32)
+#             # Fake test audio is 44.1 kHz for 2s on 2 channels
+#             stereo = np.zeros((int(original_sr * duration_s), 2), dtype=np.float32)
 
-            # Makes the left and right channel different (non-identical)
-            stereo[:, 0] = 0.25
-            stereo[:, 1] = -0.10
+#             # Makes the left and right channel different (non-identical)
+#             stereo[:, 0] = 0.25
+#             stereo[:, 1] = -0.10
 
-            # Writes it to a WAV file
-            sf.write(path, stereo, original_sr)
+#             # Writes it to a WAV file
+#             sf.write(path, stereo, original_sr)
 
-            # Should transform 44.1 kHz to 16 kHz and stereo to mono
-            audio, loaded_duration_s = load_audio(str(path))
+#             # Should transform 44.1 kHz to 16 kHz and stereo to mono
+#             audio, loaded_duration_s = load_audio(str(path))
     
-            assert audio.ndim == 1
-            assert len(audio) == int(duration_s * SAMPLE_RATE) 
-            assert loaded_duration_s == pytest.approx(duration_s)
+#             assert audio.ndim == 1
+#             assert len(audio) == int(duration_s * SAMPLE_RATE) 
+#             assert loaded_duration_s == pytest.approx(duration_s)
 
-    def test_silent_audio_is_allowed(self, tmp_path, monkeypatch):
-        path = tmp_path / "silent.wav"
-        sf.write(path, np.zeros(SAMPLE_RATE, dtype=np.float32), SAMPLE_RATE)
+#     def test_silent_audio_is_allowed(self, tmp_path, monkeypatch):
+#         path = tmp_path / "silent.wav"
+#         sf.write(path, np.zeros(SAMPLE_RATE, dtype=np.float32), SAMPLE_RATE)
 
-        audio, duration_s = load_audio(str(path))
+#         audio, duration_s = load_audio(str(path))
         
-        assert len(audio) == SAMPLE_RATE
-        assert duration_s == pytest.approx(1.0)
+#         assert len(audio) == SAMPLE_RATE
+#         assert duration_s == pytest.approx(1.0)
 
     
-    def test_non_finite_audio_fails(self, tmp_path, monkeypatch):
-        audio_file = tmp_path / "invalid.wav"
-        audio_file.touch()
+#     def test_non_finite_audio_fails(self, tmp_path, monkeypatch):
+#         audio_file = tmp_path / "invalid.wav"
+#         audio_file.touch()
 
-        audio = np.array([0.0, np.nan, 0.2], dtype=np.float32,)
+#         audio = np.array([0.0, np.nan, 0.2], dtype=np.float32,)
 
-        monkeypatch.setattr(
-            transcribe_module.librosa,
-            "load",
-            Mock(return_value=(audio, SAMPLE_RATE)),
-        )
+#         monkeypatch.setattr(
+#             transcribe_module.librosa,
+#             "load",
+#             Mock(return_value=(audio, SAMPLE_RATE)),
+#         )
 
-        with pytest.raises(ValueError, match="NaN or infinite"):
-            load_audio(str(audio_file))
+#         with pytest.raises(ValueError, match="NaN or infinite"):
+#             load_audio(str(audio_file))
 
 
 class TestWhisperTranscriberInit:
@@ -298,11 +319,18 @@ class TestWhisperTranscriberInit:
 
 class TestShortForm:
 
-    @pytest.mark.parametrize("duration_s", [1.0, 20.0, MAX_SINGLE_WINDOW_S])
+    @pytest.mark.parametrize(
+        "duration_s",
+        [1.0, 20.0, MAX_SINGLE_WINDOW_S],
+    )
     def test_short_form_accepts_up_to_30s(self, make_transcriber, duration_s):
-        """Short-form must accept audio up to and including 30 seconds."""
-        transcriber = make_transcriber(duration_s=duration_s, decode_mode="short_form")
-        result = transcriber.transcribe("dummy.wav")
+        """
+        Short-form must accept audio up to and including 30 seconds.
+        """
+        transcriber = make_transcriber(decode_mode="short_form")
+        audio = make_audio(duration_s)
+
+        result = transcriber.transcribe(audio)
 
         assert isinstance(result, TranscriptionResult,)
         assert result.text == "decoded transcript"
@@ -310,16 +338,19 @@ class TestShortForm:
         assert result.decode_mode == "short_form"
 
     def test_exactly_30_seconds_is_accepted(self, make_transcriber, monkeypatch):
-        transcriber = make_transcriber(duration_s=30, decode_mode="short_form")
-        result = transcriber.transcribe("dummy.wav")
+        transcriber = make_transcriber(decode_mode="short_form")
+        audio = make_audio(duration_s=30)
+
+        result = transcriber.transcribe(audio)
 
         assert result.duration_s == (MAX_SINGLE_WINDOW_S)
 
     def test_over_30_seconds_is_rejected(self, whisper_mocks, make_transcriber):
-        transcriber = make_transcriber(duration_s=30.1, decode_mode="short_form")
+        transcriber = make_transcriber(decode_mode="short_form")
+        audio = make_audio(duration_s=30.1)
 
         with pytest.raises(ValueError, match="short-form Whisper"):
-            transcriber.transcribe("dummy.wav")
+            transcriber.transcribe(audio)
 
         # inference should never have started for an invalid input.
         assert (len(whisper_mocks["model"].generate_calls)== 0)
@@ -327,7 +358,9 @@ class TestShortForm:
 
     def test_short_form_generation_arguments(self, whisper_mocks, make_transcriber):
         transcriber = make_transcriber(decode_mode="short_form")
-        transcriber.transcribe("dummy.wav")
+        audio = make_audio(duration_s=20)
+
+        transcriber.transcribe(audio)
 
         kwargs = whisper_mocks["model"].generate_calls[0]
 
@@ -340,8 +373,9 @@ class TestShortForm:
 
     def test_short_form_does_not_use_long_form_processor_options(self, whisper_mocks, make_transcriber):
         transcriber = make_transcriber(decode_mode="short_form")
-        transcriber.transcribe("dummy.wav")
+        audio = make_audio(duration_s=20)
 
+        transcriber.transcribe(audio)
         kwargs = whisper_mocks["processor"].processor_calls[0]
 
         assert "truncation" not in kwargs
@@ -355,15 +389,19 @@ class TestSequentialLongForm:
         """
         Sequential long-form must work for both short and long recordings.
         """
-        transcriber = make_transcriber(duration_s=duration_s, decode_mode="sequential_long_form")
-        result = transcriber.transcribe("dummy.wav")
+        transcriber = make_transcriber(decode_mode="sequential_long_form")
+        audio = make_audio(duration_s=duration_s)
+                
+        result = transcriber.transcribe(audio)
 
         assert result.duration_s == duration_s
         assert result.decode_mode == "sequential_long_form"
 
     def test_long_form_processor_arguments(self, make_transcriber, whisper_mocks):
-        transcriber = make_transcriber(duration_s=70.0, decode_mode="sequential_long_form")
-        transcriber.transcribe("dummy.wav")
+        transcriber = make_transcriber(decode_mode="sequential_long_form")
+        audio = make_audio(duration_s=70.0)
+
+        transcriber.transcribe(audio)
 
         kwargs = whisper_mocks["processor"].processor_calls[0]
 
@@ -371,8 +409,10 @@ class TestSequentialLongForm:
         assert (kwargs["return_attention_mask"] is True)
 
     def test_long_form_generation_arguments(self, make_transcriber, whisper_mocks):
-        transcriber = make_transcriber(duration_s=70.0, decode_mode="sequential_long_form")
-        transcriber.transcribe("dummy.wav")
+        transcriber = make_transcriber(decode_mode="sequential_long_form")
+        audio = make_audio(duration_s=70.0)
+                        
+        transcriber.transcribe(audio)
 
         kwargs = whisper_mocks["model"].generate_calls[0]
 
@@ -386,8 +426,10 @@ class TestSequentialLongForm:
 
 
 def test_common_processor_arguments(make_transcriber, whisper_mocks):
-        transcriber = make_transcriber()
-        transcriber.transcribe("dummy.wav")
+        transcriber = make_transcriber(decode_mode="sequential_long_form")
+        audio = make_audio(duration_s=70.0)
+                                
+        transcriber.transcribe(audio)
 
         kwargs = whisper_mocks["processor"].processor_calls[0]
 
@@ -415,7 +457,7 @@ class TestLanguageConfiguration:
         Multilingual models must be forced to English; .en models do not need those prompts.
         """
         transcriber = make_transcriber(model_name=model_name, decode_mode="short_form")
-        transcriber.transcribe("dummy.wav")
+        transcriber.transcribe(make_audio(10.0))
 
         kwargs = whisper_mocks["model"].generate_calls[0]
 
@@ -430,16 +472,16 @@ class TestLanguageConfiguration:
 class TestTranscriptionResult:
 
     def test_timing_relationships(self, make_transcriber, monkeypatch):
-        transcriber = make_transcriber(duration_s=20.0)
-        result = transcriber.transcribe("dummy.wav")
+        transcriber = make_transcriber()
+        result = transcriber.transcribe(make_audio(20.0))
 
-        assert result.preprocess_s >= 0
+        assert result.feature_extraction_s >= 0
         assert result.inference_s >= 0
         assert result.decode_s >= 0
         assert result.elapsed_s >= 0
 
-        assert result.elapsed_s == pytest.approx(result.preprocess_s + result.inference_s + result.decode_s)
-        assert (result.real_time_factor == pytest.approx(result.elapsed_s/20))
+        assert result.elapsed_s == pytest.approx(result.feature_extraction_s + result.inference_s + result.decode_s)
+        assert (result.real_time_factor == pytest.approx(result.elapsed_s/20.0))
 
     def test_timing_breakdown(self, make_transcriber, monkeypatch):
         """
@@ -448,10 +490,10 @@ class TestTranscriptionResult:
         ticks = iter([0.0, 1.0, 3.0, 3.5])
         monkeypatch.setattr(transcribe_module, "perf_counter", lambda: next(ticks))
 
-        transcriber = make_transcriber(duration_s=7.0)
-        result = transcriber.transcribe("dummy.wav")
+        transcriber = make_transcriber()
+        result = transcriber.transcribe(make_audio(7.0))
 
-        assert result.preprocess_s == pytest.approx(1.0)
+        assert result.feature_extraction_s == pytest.approx(1.0)
         assert result.inference_s == pytest.approx(2.0)
         assert result.decode_s == pytest.approx(0.5)
         assert result.elapsed_s == pytest.approx(3.5)
@@ -459,23 +501,31 @@ class TestTranscriptionResult:
 
     def test_result_is_frozen(self, make_transcriber):
         transcriber = make_transcriber()
-        result = transcriber.transcribe("dummy.wav")
+
+        result = transcriber.transcribe(make_audio())
 
         assert isinstance(result, TranscriptionResult)
+
         with pytest.raises(FrozenInstanceError):
             result.text = "changed"
 
-    def test_empty_hypothesis_is_allowed(self, make_transcriber, whisper_mocks):
+
+    def test_empty_hypothesis_is_allowed(
+        self,
+        make_transcriber,
+        whisper_mocks,
+    ):
         whisper_mocks["processor"].decoded_text = "   "
 
         transcriber = make_transcriber()
-        result = transcriber.transcribe("dummy.wav")
+
+        result = transcriber.transcribe(make_audio())
 
         assert result.text == ""
 
     def test_timestamp_tokens_are_not_decoded(self, make_transcriber, whisper_mocks):
-        transcriber = make_transcriber(duration_s=70.0, decode_mode="sequential_long_form")
-        transcriber.transcribe("dummy.wav")
+        transcriber = make_transcriber(decode_mode="sequential_long_form")
+        transcriber.transcribe(make_audio(70.0))
 
         decode_kwargs = whisper_mocks["processor"].decode_calls[0]
 
@@ -502,15 +552,16 @@ RUN_INTEGRATION_TESTS = os.getenv("RUN_WHISPER_INTEGRATION") == "1"
         ("sequential_long_form", 31.0),
     ],
 )
-def test_real_whisper_smoke(tmp_path, decode_mode, duration_s):
+def test_real_whisper_smoke(
+    decode_mode,
+    duration_s,
+    ):
     """
     Verify that the real installed Hugging Face Whisper implementation
     accepts the preprocessing and generation arguments used by the wrapper.
     """
 
-    path = tmp_path / "silence.wav"
-    audio = np.zeros(int(duration_s * SAMPLE_RATE), dtype=np.float32)
-    sf.write(path, audio, SAMPLE_RATE)
+    audio = make_audio(duration_s)
 
     transcriber = WhisperTranscriber(
         model_name="openai/whisper-tiny",
@@ -518,7 +569,7 @@ def test_real_whisper_smoke(tmp_path, decode_mode, duration_s):
         decode_mode=decode_mode,
     )
 
-    result = transcriber.transcribe(str(path))
+    result = transcriber.transcribe(audio)
 
     assert isinstance(result, TranscriptionResult)
     assert isinstance(result.text, str)

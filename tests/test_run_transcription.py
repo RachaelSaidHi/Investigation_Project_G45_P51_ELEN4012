@@ -14,6 +14,7 @@ from unittest.mock import Mock
 
 import pandas as pd
 import pytest
+from pathlib import Path
 
 import scripts.asr.run_transcription as run_transcription
 
@@ -22,7 +23,7 @@ def make_run_config():
     return {
         "manifest_path": "/tmp/manifest.csv",
         "manifest_sha256": "abc123",
-        "data_root": "/tmp/data/raw",
+        "processed_root": "/tmp/data/processed",
         "whisper": {
             "model_name": "openai/whisper-tiny",
             "decode_mode": "sequential_long_form",
@@ -82,6 +83,10 @@ class TestParseArgs:
         assert args.retry_errors is False
         assert args.duration_tolerance == pytest.approx(0.5)
 
+        assert (
+            args.processed_root == run_transcription.DEFAULT_PROCESSED_ROOT
+        )
+
     def test_optional_flags_are_parsed(self, monkeypatch):
         monkeypatch.setattr(
             sys,
@@ -96,7 +101,8 @@ class TestParseArgs:
                 "--fp32",
                 "--fail-fast",
                 "--retry-errors",
-                "--duration-tolerance", "0.25"
+                "--duration-tolerance", "0.25",
+                "--processed-root", "custom/processed"
             ],
         )
 
@@ -108,13 +114,14 @@ class TestParseArgs:
         assert args.fail_fast is True
         assert args.retry_errors is True
         assert args.duration_tolerance == pytest.approx(0.25)
+        assert args.processed_root == Path("custom/processed")
 
 
 class TestFileSha256:
 
     def test_hash_matches_hashlib(self, tmp_path):
         path = tmp_path / "manifest.csv"
-        contents = b"sample_id,filepath\n1,a.wav\n"
+        contents = b"sample_id,processed_filepath\n1,a.wav\n"
         path.write_bytes(contents)
 
         expected = hashlib.sha256(contents).hexdigest()
@@ -124,11 +131,11 @@ class TestFileSha256:
     def test_hash_changes_when_file_changes(self, tmp_path):
         path = tmp_path / "manifest.csv"
 
-        contents = b"sample_id,filepath\n1,a.wav\n"
+        contents = b"sample_id,processed_filepath\n1,a.wav\n"
         path.write_bytes(contents)
         first_hash = run_transcription.file_sha256(path)
 
-        second_contents = b"sample_id,filepath\n2,b.wav\n"
+        second_contents = b"sample_id,processed_filepath\n2,b.wav\n"
         path.write_bytes(second_contents)
         second_hash = run_transcription.file_sha256(path)
 
@@ -137,7 +144,7 @@ class TestFileSha256:
     def test_hash_same_when_file_same(self, tmp_path):
         path = tmp_path / "manifest.csv"
         
-        contents = b"sample_id,filepath\n1,a.wav\n"
+        contents = b"sample_id,processed_filepath\n1,a.wav\n"
         path.write_bytes(contents)
         first_hash = run_transcription.file_sha256(path)
 
@@ -150,13 +157,13 @@ class TestBuildRunConfig:
 
     def test_config_contains_manifest_transcriber_and_tolerance(self, tmp_path):
         manifest = tmp_path / "manifest.csv"
-        manifest.write_text("sample_id,filepath\n", encoding="utf-8")
+        manifest.write_text("sample_id,processed_filepath\n", encoding="utf-8")
 
-        data_root = tmp_path / "data" / "raw"
+        processed_root = tmp_path / "data" / "processed"
 
         args = SimpleNamespace(
             manifest=manifest,
-            data_root=data_root,
+            processed_root=processed_root,
             duration_tolerance=0.5,
         )
 
@@ -170,7 +177,7 @@ class TestBuildRunConfig:
 
         assert config["manifest_path"] == str(manifest.resolve())
         assert config["manifest_sha256"] == "abc123"
-        assert config["data_root"] == str(data_root.resolve())
+        assert config["processed_root"] == str(processed_root.resolve())
         assert config["whisper"] == transcriber.describe()
         assert config["transcription"]["duration_tolerance_s"] == pytest.approx(0.5)
         assert "python" in config["software"]
@@ -191,7 +198,7 @@ class TestValidateResumeConfig:
         "path,new_value,expected_name",
         [
             (("manifest_sha256",), "different", "manifest"),
-            (("data_root",), "/other/data", "data_root"),
+            (("processed_root",), "/other/processed", "processed_root"),
             (("whisper", "model_name"), "openai/whisper-base", "model_name"),
             (("whisper", "decode_mode"), "short_form", "decode_mode"),
             (("whisper", "precision"), "torch.float16", "precision"),
@@ -247,7 +254,7 @@ class TestPrepareRunDirectory:
         run_dir = tmp_path / "runs" / "test_run"
         manifest_path = tmp_path / "manifest.csv"
         manifest_path.write_text(
-            "sample_id,filepath\nsample_1,a.wav\n",
+            "sample_id,processed_filepath\nsample_1,a.wav\n",
             encoding="utf-8",
         )
 
@@ -296,7 +303,7 @@ class TestPrepareRunDirectory:
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "manifest_snapshot.csv").write_text(
-            "sample_id,filepath\n",
+            "sample_id,processed_filepath\n",
             encoding="utf-8",
         )
 
@@ -324,7 +331,7 @@ class TestPrepareRunDirectory:
     def test_existing_run_with_changed_config_fails(self, tmp_path):
         run_dir = tmp_path / "run"
         manifest_path = tmp_path / "manifest.csv"
-        manifest_path.write_text("sample_id,filepath\n", encoding="utf-8")
+        manifest_path.write_text("sample_id,processed_filepath\n", encoding="utf-8")
 
         previous = make_run_config()
         run_transcription.prepare_run_directory(run_dir, manifest_path, previous)
@@ -387,12 +394,12 @@ class TestMain:
             [
                 {
                     "sample_id": "sample_1",
-                    "filepath": "sample.wav",
+                    "processed_filepath": "sample.wav",
                 }
             ]
         ).to_csv(manifest_path, index=False)
 
-        data_root = tmp_path / "data" / "raw"
+        processed_root = tmp_path / "data" / "processed"
         results_root = tmp_path / "results" / "asr" / "runs"
 
         dummy_transcriber = DummyTranscriber()
@@ -419,7 +426,7 @@ class TestMain:
                 "--run-name", "test_run",
                 "--model", "openai/whisper-tiny",
                 "--device", "cpu",
-                "--data-root", str(data_root),
+                "--processed-root", str(processed_root),
                 "--results-root", str(results_root),
                 "--retry-errors",
                 "--fail-fast",
@@ -446,13 +453,16 @@ class TestMain:
         kwargs = pipeline_mock.call_args.kwargs
 
         assert kwargs["transcriber"] is dummy_transcriber
-        assert kwargs["data_root"] == data_root
+        assert kwargs["processed_root"] == processed_root
         assert kwargs["results_path"] == run_dir / "transcriptions.csv"
         assert kwargs["retry_errors"] is True
         assert kwargs["fail_fast"] is True
         assert kwargs["duration_tolerance_s"] == pytest.approx(0.25)
 
         assert kwargs["manifest"]["sample_id"].tolist() == ["sample_1"]
+        assert kwargs["manifest"]["processed_filepath"].tolist() == [
+        "sample.wav"
+    ]
 
     def test_fp32_flag_disables_fp16(self, tmp_path, monkeypatch):
         manifest_path = tmp_path / "manifest.csv"
@@ -460,7 +470,7 @@ class TestMain:
             [
                 {
                     "sample_id": "sample_1",
-                    "filepath": "sample.wav",
+                    "processed_filepath": "sample.wav",
                 }
             ]
         ).to_csv(manifest_path, index=False)

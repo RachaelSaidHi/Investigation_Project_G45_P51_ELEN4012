@@ -12,11 +12,12 @@ from pathlib import Path
 import pandas as pd
 
 from src.asr.transcribe import WhisperTranscriber
+from src.common.audio_io import load_processed_audio
 
 
 REQUIRED_MANIFEST_COLUMNS = {
     "sample_id",
-    "filepath",
+    "processed_filepath",
 }
 
 DEFAULT_DURATION_TOLERANCE_S = 0.5
@@ -27,6 +28,7 @@ RESULT_COLUMNS = [
     "sample_id",
     "dataset",
     "filepath",
+    "processed_filepath",
     "manifest_index",
 
     # Status
@@ -51,7 +53,7 @@ RESULT_COLUMNS = [
     "duration_mismatch",
 
     # Timing
-    "preprocess_s",
+    "feature_extraction_s",
     "inference_s",
     "decode_s",
     "elapsed_s",
@@ -75,8 +77,17 @@ def validate_manifest(manifest: pd.DataFrame) -> None:
     if manifest["sample_id"].isna().any():
         raise ValueError("Manifest contains missing sample_id values.")
 
-    if manifest["filepath"].isna().any():
-        raise ValueError("Manifest contains missing filepath values.")
+    processed_filepaths = manifest["processed_filepath"]
+
+    if processed_filepaths.isna().any():
+        raise ValueError(
+            "Manifest contains missing processed_filepath values."
+        )
+
+    if processed_filepaths.astype(str).str.strip().eq("").any():
+        raise ValueError(
+            "Manifest contains empty processed_filepath values."
+        )
 
     sample_ids = manifest["sample_id"].astype(str)
 
@@ -90,20 +101,20 @@ def validate_manifest(manifest: pd.DataFrame) -> None:
 
 
 # TODO: check if this duplicates def load_audio(filepath: str) error checks in transcribe.py
-def validate_audio_path(row, data_root: Path) -> Path:
-    """
-    Validate a manifest filepath relative to data/raw.
-    """
+# def validate_audio_path(row, data_root: Path) -> Path:
+#     """
+#     Validate a manifest filepath relative to data/raw.
+#     """
 
-    audio_path = data_root / str(row["filepath"])
+#     audio_path = data_root / str(row["filepath"])
 
-    if not audio_path.exists():
-        raise FileNotFoundError(f"Audio file does not exist: {audio_path}")
+#     if not audio_path.exists():
+#         raise FileNotFoundError(f"Audio file does not exist: {audio_path}")
 
-    if not audio_path.is_file():
-        raise ValueError(f"Audio path is not a file: {audio_path}")
+#     if not audio_path.is_file():
+#         raise ValueError(f"Audio path is not a file: {audio_path}")
 
-    return audio_path
+#     return audio_path
 
 
 def get_manifest_duration(row) -> float | None:
@@ -148,7 +159,12 @@ def build_success_record(
     return {
         "sample_id": str(row["sample_id"]),
         "dataset": row.get("dataset"),
-        "filepath": str(row["filepath"]),
+        "filepath": (
+            None
+            if pd.isna(row.get("filepath"))
+            else str(row.get("filepath"))
+        ),
+        "processed_filepath": str(row["processed_filepath"]),
         "manifest_index": manifest_index,
 
         "status": "ok",
@@ -168,7 +184,7 @@ def build_success_record(
         "duration_difference_s": duration_difference_s,
         "duration_mismatch": duration_mismatch,
 
-        "preprocess_s": transcription.preprocess_s,
+        "feature_extraction_s": transcription.feature_extraction_s,
         "inference_s": transcription.inference_s,
         "decode_s": transcription.decode_s,
         "elapsed_s": transcription.elapsed_s,
@@ -191,7 +207,12 @@ def build_error_record(
     return {
         "sample_id": str(row["sample_id"]),
         "dataset": row.get("dataset"),
-        "filepath": str(row["filepath"]),
+        "filepath": (
+            None
+            if pd.isna(row.get("filepath"))
+            else str(row.get("filepath"))
+        ),
+        "processed_filepath": str(row["processed_filepath"]),
         "manifest_index": manifest_index,
 
         "status": "error",
@@ -211,7 +232,7 @@ def build_error_record(
         "duration_difference_s": None,
         "duration_mismatch": None,
 
-        "preprocess_s": None,
+        "feature_extraction_s": None,
         "inference_s": None,
         "decode_s": None,
         "elapsed_s": None,
@@ -311,7 +332,7 @@ def save_results_atomic(results: pd.DataFrame, results_path: Path) -> None:
 def run_transcription_manifest(
     manifest: pd.DataFrame,
     transcriber: WhisperTranscriber,
-    data_root: Path,
+    processed_root: Path,
     results_path: Path,
     retry_errors: bool = False,
     fail_fast: bool = False,
@@ -417,9 +438,12 @@ def run_transcription_manifest(
             print(f"[{manifest_index + 1}/{total_samples}] Transcribing {sample_id}...")
     
             try:
-                audio_path = validate_audio_path(row, data_root)
-    
-                transcription = transcriber.transcribe(str(audio_path))
+                audio = load_processed_audio(
+                    processed_root=processed_root,
+                    processed_filepath=row["processed_filepath"],
+                )
+
+                transcription = transcriber.transcribe(audio)
     
                 record = build_success_record(
                     row=row,

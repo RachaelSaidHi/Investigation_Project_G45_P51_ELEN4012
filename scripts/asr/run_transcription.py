@@ -26,7 +26,7 @@ from src.asr.transcribe import WhisperTranscriber
 from src.asr.transcription_pipeline import (run_transcription_manifest)
 
 
-DEFAULT_DATA_ROOT = Path("data/raw")
+DEFAULT_PROCESSED_ROOT = Path("data/processed")
 DEFAULT_RESULTS_ROOT = Path("results/asr/runs")
 
 
@@ -42,7 +42,7 @@ def build_run_config(
     return {
         "manifest_path": str(args.manifest.resolve()),
         "manifest_sha256": manifest_hash,
-        "data_root": str(args.data_root.resolve()),
+        "processed_root": str(args.processed_root.resolve()),
         "whisper": transcriber.describe(),
 
         "transcription": {
@@ -175,9 +175,13 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--data-root",
+        "--processed-root",
         type=Path,
-        default=DEFAULT_DATA_ROOT,
+        default=DEFAULT_PROCESSED_ROOT,
+        help=(
+            "Root directory containing preprocessed audio. "
+            "processed_filepath values in the manifest are relative to this."
+        ),
     )
 
     parser.add_argument(
@@ -249,9 +253,9 @@ def validate_resume_config(previous: dict, current: dict) -> None:
             current["manifest_sha256"],
         ),
 
-        "data_root": (
-            previous["data_root"],
-            current["data_root"],
+        "processed_root": (
+            previous["processed_root"],
+            current["processed_root"],
         ),
 
         "model_name": (
@@ -367,7 +371,7 @@ def main():
     run_transcription_manifest(
         manifest=manifest,
         transcriber=transcriber,
-        data_root=args.data_root,
+        processed_root=args.processed_root,
         results_path=results_path,
         retry_errors=args.retry_errors,
         fail_fast=args.fail_fast,
