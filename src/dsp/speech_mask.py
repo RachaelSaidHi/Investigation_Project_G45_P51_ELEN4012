@@ -32,6 +32,10 @@ REQUIRED_CONFIG_KEYS = (
 )
 
 
+class NoUsableSpeechError(ValueError):
+    """Recording does not contain enough usable speech for DSP extraction."""
+
+
 def _validate_config(config: dict) -> None:
     """
     Validate the required speech-mask configuration.
@@ -259,7 +263,7 @@ def _threshold_frames(
     """
 
     if np.all(all_zero):
-        raise ValueError(
+        raise NoUsableSpeechError(
             "Audio contains only digital silence."
         )
 
@@ -668,7 +672,7 @@ def speech_intervals(
     )
 
     if total_speech_s < config["min_total_speech_s"]:
-        raise ValueError(
+        raise NoUsableSpeechError(
             f"Insufficient speech: {total_speech_s:.2f} s detected, "
             f"minimum is {config['min_total_speech_s']:.2f} s."
         )
