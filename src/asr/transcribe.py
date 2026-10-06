@@ -36,41 +36,6 @@ class TranscriptionResult:
     decode_mode: DecodeMode     # short-form or sequential long-form transcription
 
 
-# TODO: resampling belongs in preprocessing, so this will eventually take already-prepared audio.
-# def load_audio(filepath: str):
-#     """
-#     Load an audio file as mono 16 kHz audio and return it with its duration
-#     """
-
-#     if not filepath:
-#         raise ValueError("Audio filepath cannot be None or empty.")
-
-#     path = Path(filepath)
-
-#     if not path.exists():
-#         raise FileNotFoundError(f"Audio file does not exist: {path}")
-
-#     if not path.is_file():
-#         raise ValueError(f"Audio path is not a file: {path}")
-
-#     audio, _ = librosa.load(
-#         filepath,
-#         sr = SAMPLE_RATE,
-#         mono = True,
-#     )
-
-#     if len(audio) == 0:
-#         raise ValueError("Audio file is empty.")
-
-#     if not np.all(np.isfinite(audio)):
-#         raise ValueError("Audio contains NaN or infinite samples.")
-
-
-#     duration_s = len(audio) / SAMPLE_RATE
-
-#     return audio, duration_s
-
-
 class WhisperTranscriber:
     """
     Loads one Whisper model and reuses it for multiple recordings.
@@ -149,10 +114,10 @@ class WhisperTranscriber:
 
     def transcribe(self, audio: np.ndarray) -> TranscriptionResult:
         """
-        Transcribe one audio file.
+        Transcribe one preprocessed audio waveform.
 
         Audio longer than 30 seconds when short-form is chosen is rejected with an error. 
-        The class object has a decode_path set on initialisation.
+        The transcriber has a decode_mode set on initialisation.
         This ensures that every sample in an analysis goes through the same decoding path.
         """
 

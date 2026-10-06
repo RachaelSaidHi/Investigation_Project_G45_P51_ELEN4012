@@ -100,23 +100,6 @@ def validate_manifest(manifest: pd.DataFrame) -> None:
         raise ValueError(f"Manifest contains duplicate sample_id values: {duplicated.tolist()}")
 
 
-# TODO: check if this duplicates def load_audio(filepath: str) error checks in transcribe.py
-# def validate_audio_path(row, data_root: Path) -> Path:
-#     """
-#     Validate a manifest filepath relative to data/raw.
-#     """
-
-#     audio_path = data_root / str(row["filepath"])
-
-#     if not audio_path.exists():
-#         raise FileNotFoundError(f"Audio file does not exist: {audio_path}")
-
-#     if not audio_path.is_file():
-#         raise ValueError(f"Audio path is not a file: {audio_path}")
-
-#     return audio_path
-
-
 def get_manifest_duration(row) -> float | None:
     """
     Get the manifest duration if available to compare with the audio duration after loading the audio.
@@ -347,14 +330,14 @@ def run_transcription_manifest(
 
         Args:
             manifest:
-                Manifest containing at least sample_id and filepath.
+                Manifest containing at least sample_id and processed_filepath.
     
             transcriber:
                 Already-loaded WhisperTranscriber. The model is loaded once
                 outside this function and reused across all samples.
     
-            data_root:
-                Root directory to which manifest filepaths are relative.
+            processed_root:
+                Root directory to which processed_filepath values are relative.
 
             results_path:
                 Path to the transcription checkpoint CSV.
