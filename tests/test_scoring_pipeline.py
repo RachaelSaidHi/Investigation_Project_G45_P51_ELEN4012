@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+import sys
 
 import src.asr.scoring_pipeline as scoring_pipeline
 
@@ -331,7 +332,7 @@ class TestScoreSample:
     def test_reference_and_hypothesis_are_normalized_and_scored(self, monkeypatch):
         normalization_calls = []
 
-        def fake_normalize(text, dataset):
+        def fake_normalize(text, dataset, drop_punctuation_words=True):
             normalization_calls.append((text, dataset))
 
             if text == "THIS IS REFERENCE RAW":
@@ -388,7 +389,7 @@ class TestScoreSample:
         assert result["n_reference_words"] == 4
 
     def test_empty_normalized_reference_does_not_compute_wer(self, monkeypatch):
-        def fake_normalize(text, dataset):
+        def fake_normalize(text, dataset, drop_punctuation_words=True):
             if text == "REFERENCE RAW":
                 return "", 0
 
@@ -429,6 +430,24 @@ class TestScoreSample:
         assert result["insertions"] is None
         assert result["hits"] is None
         assert result["n_reference_words"] is None
+
+    
+    def test_score_sample_forwards_drop_punctuation_flag(self, monkeypatch):
+        calls = []
+
+        def fake_normalize(text, dataset, drop_punctuation_words=True):
+            calls.append(drop_punctuation_words)
+            return "hello world", 0
+
+        monkeypatch.setattr(scoring_pipeline, "normalize_text", fake_normalize)
+
+        row = {
+            "sample_id": "s1", "dataset": "afrispeech", "model_name": "m", "decode_mode": "d",
+            "status": "ok", "reference_transcript": "Hello world", "transcription_raw": "hello world",
+        }
+        scoring_pipeline.score_sample(row, drop_punctuation_words=False)
+
+        assert calls == [False, False]   # reference and hypothesis
 
 
 class TestRunScoring:
@@ -537,7 +556,7 @@ class TestRunScoring:
             ]
         )
 
-        def fake_normalize(text, dataset):
+        def fake_normalize(text, dataset, drop_punctuation_words=True):
             if text == "REFERENCE RAW":
                 return "", 0
 
@@ -604,7 +623,7 @@ class TestRunScoring:
 
         datasets_seen = []
 
-        def fake_normalize(text, dataset):
+        def fake_normalize(text, dataset, drop_punctuation_words=True):
             datasets_seen.append(dataset)
             return text, 0
 
@@ -653,7 +672,7 @@ class TestRunScoring:
         manifest = make_manifest()
         transcriptions = make_transcriptions()
 
-        def fail(_row):
+        def fail(_row, drop_punctuation_words=True):
             raise ValueError("fake scoring problem")
 
         monkeypatch.setattr(scoring_pipeline, "score_sample", fail)

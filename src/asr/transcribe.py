@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 from time import perf_counter
+
 import torch
-import librosa
-from transformers import (WhisperProcessor, WhisperForConditionalGeneration)
+from transformers import (
+    WhisperProcessor, 
+    WhisperForConditionalGeneration
+)
+
 from typing import Literal
-from pathlib import Path
 import numpy as np
 
 # TODO: Make a whisper.yaml that can be used to adjust experimental configs
@@ -25,47 +28,12 @@ class TranscriptionResult:
 
     text: str                   # decoded Whisper transcript before project normalization
     duration_s: float           # length of the audio
-    preprocess_s: float         # mel-spectrogram extraction (CPU) and transfer to model device
+    feature_extraction_s: float         # mel-spectrogram extraction (CPU) and transfer to model device
     inference_s: float          # model.generate, the part that scales with model size
     decode_s: float             # token ids to text (CPU)
     elapsed_s: float            # sum of the three (how long the full transcription took)
     real_time_factor: float     # elapsed_s / duration_s (below 1.0 is faster than real time)
     decode_mode: DecodeMode     # short-form or sequential long-form transcription
-
-
-# TODO: resampling belongs in preprocessing, so this will eventually take already-prepared audio.
-def load_audio(filepath: str):
-    """
-    Load an audio file as mono 16 kHz audio and return it with its duration
-    """
-
-    if not filepath:
-        raise ValueError("Audio filepath cannot be None or empty.")
-
-    path = Path(filepath)
-
-    if not path.exists():
-        raise FileNotFoundError(f"Audio file does not exist: {path}")
-
-    if not path.is_file():
-        raise ValueError(f"Audio path is not a file: {path}")
-
-    audio, _ = librosa.load(
-        filepath,
-        sr = SAMPLE_RATE,
-        mono = True,
-    )
-
-    if len(audio) == 0:
-        raise ValueError("Audio file is empty.")
-
-    if not np.all(np.isfinite(audio)):
-        raise ValueError("Audio contains NaN or infinite samples.")
-
-
-    duration_s = len(audio) / SAMPLE_RATE
-
-    return audio, duration_s
 
 
 class WhisperTranscriber:
@@ -144,16 +112,16 @@ class WhisperTranscriber:
             torch.cuda.synchronize(self.device)
 
 
-    def transcribe(self, filepath: str) -> TranscriptionResult:
+    def transcribe(self, audio: np.ndarray) -> TranscriptionResult:
         """
-        Transcribe one audio file.
+        Transcribe one preprocessed audio waveform.
 
         Audio longer than 30 seconds when short-form is chosen is rejected with an error. 
-        The class object has a decode_path set on initialisation.
+        The transcriber has a decode_mode set on initialisation.
         This ensures that every sample in an analysis goes through the same decoding path.
         """
 
-        audio, duration_s = load_audio(filepath)
+        duration_s = len(audio) / SAMPLE_RATE
 
         if self.decode_mode == "short_form":
             if duration_s > MAX_SINGLE_WINDOW_S:
@@ -237,7 +205,7 @@ class WhisperTranscriber:
         self._synchronise()
         t3 = perf_counter()
 
-        preprocess_s = t1 - t0
+        feature_extraction_s = t1 - t0
         inference_s = t2 - t1
         decode_s = t3 - t2
         elapsed_s = t3 - t0
@@ -245,7 +213,7 @@ class WhisperTranscriber:
         return TranscriptionResult(
             text = text,
             duration_s = float(duration_s),
-            preprocess_s = float(preprocess_s),
+            feature_extraction_s = float(feature_extraction_s),
             inference_s = float(inference_s),
             decode_s = float(decode_s),
             elapsed_s = float(elapsed_s),
