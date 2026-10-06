@@ -66,6 +66,12 @@ class TestBuildScoringConfig:
             lambda: {"name": "test-normalizer"},
         )
         monkeypatch.setattr(
+            run_scoring, 
+            "AFRISPEECH_PUNCTUATION_TERMS", 
+            ("comma", "full stop")
+        )
+
+        monkeypatch.setattr(
             run_scoring,
             "version",
             lambda package: f"{package}-test-version",
@@ -74,11 +80,16 @@ class TestBuildScoringConfig:
         config = run_scoring.build_scoring_config(
             manifest_path,
             transcriptions_path,
+            drop_punctuation_words=True
         )
 
         assert config["manifest_path"] == str(manifest_path.resolve())
         assert config["transcriptions_path"] == str(transcriptions_path.resolve())
-        assert config["normalization"] == {"name": "test-normalizer"}
+        assert config["normalization"] == {
+            "name": "test-normalizer",
+            "drop_punctuation_words": True,
+            "afrispeech_punctuation_terms": ["comma", "full stop"],
+        }
         assert config["software"]["jiwer"] == "jiwer-test-version"
         assert config["software"]["transformers"] == "transformers-test-version"
         assert "python" in config["software"]
@@ -87,6 +98,17 @@ class TestBuildScoringConfig:
 
 
 class TestMain:
+
+    def test_drop_punctuation_words_defaults_to_true(self, monkeypatch):
+            monkeypatch.setattr(sys, "argv", ["run_scoring", "--run-dir", "x"])
+            assert run_scoring.parse_args().drop_punctuation_words is True
+    
+    def test_no_drop_punctuation_words_flag_sets_false(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["run_scoring", "--run-dir", "x", "--no-drop-punctuation-words"])
+        assert run_scoring.parse_args().drop_punctuation_words is False
+
+    def test_config_name_follows_output_name(self, tmp_path):
+            assert run_scoring.config_path_for(tmp_path / "scored_punc_kept.csv").name == "scored_punc_kept_config.json"
 
     def test_missing_run_directory_fails(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
@@ -226,11 +248,12 @@ class TestMain:
         kwargs = scoring_mock.call_args.kwargs
 
         assert kwargs["fail_fast"] is True
+        assert kwargs["drop_punctuation_words"] is True
         assert kwargs["manifest"]["sample_id"].tolist() == ["sample_1"]
         assert kwargs["transcriptions"]["sample_id"].tolist() == ["sample_1"]
 
         output_path = run_dir / "custom_scores.csv"
-        config_path = run_dir / "scoring_config.json"
+        config_path = run_dir / "custom_scores_config.json"
 
         assert output_path.exists()
         assert config_path.exists()
@@ -248,6 +271,7 @@ class TestMain:
         config_mock.assert_called_once_with(
             run_dir / "manifest_snapshot.csv",
             run_dir / "transcriptions.csv",
+            drop_punctuation_words=True,
         )
 
     def test_default_output_name_is_scored_csv(self, tmp_path, monkeypatch):
@@ -287,4 +311,4 @@ class TestMain:
         run_scoring.main()
 
         assert (run_dir / "scored.csv").exists()
-        assert (run_dir / "scoring_config.json").exists()
+        assert (run_dir / "scored_config.json").exists()

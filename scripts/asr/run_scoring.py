@@ -22,7 +22,7 @@ from src.asr.normalize import (describe_normalizer, AFRISPEECH_PUNCTUATION_TERMS
 
 
 DEFAULT_OUTPUT_NAME = "scored.csv"
-DEFAULT_CONFIG_NAME = "scoring_config.json"
+DEFAULT_CONFIG_NAME = "scored_config.json"
 
 
 def parse_args():
@@ -99,6 +99,13 @@ def build_scoring_config(
     }
 
 
+def config_path_for(output_path: Path) -> Path:
+    """
+    Config is named after the scored file so different scorings of one run don't overwrite each other.
+    """
+    return output_path.with_name(f"{output_path.stem}_config.json")
+
+
 def main():
     args = parse_args()
 
@@ -118,8 +125,7 @@ def main():
 
     transcriptions_path = (run_dir/ "transcriptions.csv")
     output_path = (run_dir/ args.output_name)
-    config_path = run_dir / f"{Path(args.output_name).stem}_config.json"
-    # config_path = (run_dir/ DEFAULT_CONFIG_NAME)
+    config_path = config_path_for(output_path)
 
    
     # Verify required run files
@@ -155,7 +161,7 @@ def main():
     scoring_config = build_scoring_config(
         manifest_path,
         transcriptions_path,
-        args.drop_punctuation_words,
+        drop_punctuation_words=args.drop_punctuation_words,
     )
 
     with open(
