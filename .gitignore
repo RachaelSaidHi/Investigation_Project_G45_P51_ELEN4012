@@ -33,7 +33,8 @@ Thumbs.db__pycache__
 src/asr/*.mp3
 
 # Results
-results/asr
+results/asr/
+results/analysis/
 results/dsp/
 
 # inspection files

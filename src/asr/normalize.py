@@ -1,7 +1,6 @@
 from transformers import WhisperTokenizer
 from functools import lru_cache
 
-# TODO: Test that all models normalise the same way to validate why it doesnt really matter which is chosen
 # The built-in tokenizer from a Hugging Face transformer processor is used opposed to a standalone package like whisper_normalizer
 # This is because the models are already downloaded for the transcription pipeline so the processor can be tapped into without installing separate utilities
 DEFAULT_NORMALIZER_MODEL = "openai/whisper-small"

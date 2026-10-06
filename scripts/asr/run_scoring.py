@@ -18,7 +18,7 @@ import jiwer
 import pandas as pd
 
 from src.asr.scoring_pipeline import (run_scoring)
-from src.asr.normalize import (describe_normalizer)
+from src.asr.normalize import (describe_normalizer, AFRISPEECH_PUNCTUATION_TERMS)
 
 
 DEFAULT_OUTPUT_NAME = "scored.csv"
@@ -56,10 +56,24 @@ def parse_args():
         ),
     )
 
+    parser.add_argument(
+        "--drop-punctuation-words",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Remove spoken punctuation words (AfriSpeech only). "
+            "Use --no-drop-punctuation-words to keep them. Default: drop."
+        ),
+    )
+
     return parser.parse_args()
 
 
-def build_scoring_config(manifest_path: Path, transcriptions_path: Path) -> dict:
+def build_scoring_config(
+    manifest_path: Path,
+    transcriptions_path: Path,
+    drop_punctuation_words: bool,
+) -> dict:
     """
     Build metadata describing the scoring run.
     """
@@ -68,9 +82,11 @@ def build_scoring_config(manifest_path: Path, transcriptions_path: Path) -> dict
         "manifest_path": str(manifest_path.resolve()),
         "transcriptions_path": str(transcriptions_path.resolve()),
 
-        "normalization": (
-            describe_normalizer()
-        ),
+        "normalization": {
+            **describe_normalizer(),
+            "drop_punctuation_words": drop_punctuation_words,
+            "afrispeech_punctuation_terms": list(AFRISPEECH_PUNCTUATION_TERMS),
+        },
 
         "software": {
             "python": platform.python_version(),
@@ -102,7 +118,8 @@ def main():
 
     transcriptions_path = (run_dir/ "transcriptions.csv")
     output_path = (run_dir/ args.output_name)
-    config_path = (run_dir/ DEFAULT_CONFIG_NAME)
+    config_path = run_dir / f"{Path(args.output_name).stem}_config.json"
+    # config_path = (run_dir/ DEFAULT_CONFIG_NAME)
 
    
     # Verify required run files
@@ -127,6 +144,7 @@ def main():
         manifest=manifest,
         transcriptions=transcriptions,
         fail_fast=args.fail_fast,
+        drop_punctuation_words=args.drop_punctuation_words,
     )
 
 
@@ -134,7 +152,11 @@ def main():
     results.to_csv(output_path, index=False)
 
     # Save scoring metadata
-    scoring_config = (build_scoring_config(manifest_path, transcriptions_path))
+    scoring_config = build_scoring_config(
+        manifest_path,
+        transcriptions_path,
+        args.drop_punctuation_words,
+    )
 
     with open(
         config_path,

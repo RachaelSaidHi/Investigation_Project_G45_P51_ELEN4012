@@ -204,7 +204,6 @@ class WhisperTranscriber:
             attention_mask = inputs.attention_mask.to(self.device)
             generate_kwargs["attention_mask"] = attention_mask
 
-            # TODO: Might need to adjust these
             generate_kwargs["temperature"] = 0.0
             generate_kwargs["condition_on_prev_tokens"] = False
 

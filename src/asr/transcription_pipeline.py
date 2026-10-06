@@ -61,7 +61,6 @@ RESULT_COLUMNS = [
     "completed_at_utc",
 ]
 
-# TODO: can make a helper function that can be called for DSP or transcription pipeline to check correct columns are there
 # Only keep any transcription specific validation needed
 def validate_manifest(manifest: pd.DataFrame) -> None:
     """
@@ -245,7 +244,7 @@ def load_existing_results(results_path: Path) -> pd.DataFrame:
 
     results["sample_id"] = (results["sample_id"].astype(str))
 
-    # There should be no dupkicated sample ids in the existing results
+    # There should be no duplicated sample ids in the existing results
     duplicated = (results.loc[results["sample_id"].duplicated(), "sample_id"].unique())
 
     if len(duplicated) > 0:
@@ -320,6 +319,7 @@ def run_transcription_manifest(
 ) -> pd.DataFrame:
         """
         Transcribe an entire manifest with checkpoints and resumability.
+        
         Successfully transcribed samples already present are skipped.
         Previously failed samples are skipped by default, but can be retried.
         Results are saved after every attempted sample.
