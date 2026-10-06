@@ -59,6 +59,8 @@ FEATURES_PACKAGE = "src.dsp.features"
 # Features run by --feature all, in this order. Add a feature here once its
 # module (src/dsp/features/<name>.py) and config (configs/dsp/<name>.json) exist.
 FEATURE_MODULES = [
+    "speech_rate_acoustic",
+    "speech_rate_reference",
     "rms_test",
     "mfcc",
     "pitch",

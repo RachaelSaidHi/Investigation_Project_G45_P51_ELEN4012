@@ -2,7 +2,11 @@
 Reference-transcript speech-rate and pause features.
 
 Uses the ground-truth reference transcript for the syllable count and the
-project-wide shared speech mask for timing.
+project-wide shared speech mask for timing:
+
+- first-to-last speech span,
+- active-speech duration,
+- pause timing
 
 Whisper's transcription is not used either: its errors would feed into the
 rate, making any correlation with WER circular.
@@ -68,6 +72,8 @@ def _shared_intervals(
     Return shared speech intervals, mapping deterministic exclusions.
     """
 
+    # Calls the speech mask's function to get speech intervals for
+    # stretches of speech
     try:
         return speech_intervals(
             audio=audio,
@@ -104,6 +110,8 @@ def _timing_features(
     if active_speech_s <= 0:
         raise NoUsableSpeech("Detected active-speech duration is zero.")
 
+    # The gaps between intervals
+    # The shortest pause is set by the speech mask's max_gap_s
     pauses = np.asarray(
         [
             intervals[i + 1][0] - intervals[i][1]
@@ -113,7 +121,7 @@ def _timing_features(
     )
 
     # Numerical guard only. Shared intervals should already be ordered and
-    # non-overlapping.
+    # non-overlapping (should never happen)
     if np.any(pauses < 0):
         raise ValueError("Speech intervals overlap or are out of order.")
 
@@ -128,6 +136,7 @@ def extract(
 ) -> dict[str, float]:
     settings = config["feature"]
 
+    # Gets speech intervals
     intervals = _shared_intervals(
         audio=audio,
         sample_rate=sample_rate,
@@ -148,9 +157,11 @@ def extract(
         raise ValueError("Reference transcript is empty.")
 
 
+    # Extracts the number of syllables from the reference
     counts = count_text_syllables(raw_reference)
     syllables = counts["syllables"]
 
+    # Rejects transcripts where words are less than the minimum in config
     if counts["words"] < settings["min_reference_words"]:
         raise ValueError(f"Only {counts["words"]} reference words found (minimum 3).")
 
@@ -182,9 +193,12 @@ def extract(
 
     return {
         "rate_ref_syllables": float(syllables),
+
+        # can flag rows where syllable count had guesses
         "rate_ref_guessed_words": float(
             counts["spelled_words"] + counts["estimated_words"]
         ),
+
         "rate_ref_speech_span_s": float(speech_span_s),
         "rate_ref_active_speech_s": float(active_speech_s),
         "rate_ref_speaking_syl_per_s": float(speaking_rate),
