@@ -36,6 +36,7 @@ src/asr/*.mp3
 results/asr/
 results/analysis/
 results/dsp/
+# results/dsp/pitch_validation/ceiling_comparison_01
 
 # inspection files
 # inspection/
