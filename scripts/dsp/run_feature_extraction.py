@@ -61,10 +61,10 @@ FEATURES_PACKAGE = "src.dsp.features"
 FEATURE_MODULES = [
     "speech_rate_acoustic",
     "speech_rate_reference",
-    "rms_test",
     "mfcc",
     "pitch",
-    "formants",
+    # "rms_test",
+    # "formants",
 ]
 
 
