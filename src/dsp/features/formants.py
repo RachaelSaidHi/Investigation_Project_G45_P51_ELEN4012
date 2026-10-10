@@ -5,9 +5,9 @@ and the frozen pitch track then identify speech-active, voiced frames.
 The resulting summaries describe voiced speech as a whole, not individual
 vowel categories.
 
-The full formant track is retained for inspection of rejected frames and 
-comparison of frame-selection methods during validation. The formant ceiling,
-frame-selection policy and minimum usable duration are still provisional.
+The full formant track is retained for both all-voiced and louder-half
+recording summaries. Both selections use the same Burg estimates at the
+common ceiling; the inspection-only diagnostics remain outside these features.
 
 This module follows the shared DSP feature interface. The runner supplies
 formants.json as config["feature"] and speech_mask.json as
@@ -15,7 +15,7 @@ config["speech_mask"]. Formants.json also contains a copy of the frozen
 pitch settings used to identify voiced frames, so the runner need not change.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import parselmouth
@@ -26,7 +26,7 @@ from src.dsp.speech_mask import speech_intervals, speech_mask_for_times
 
 
 FEATURE_NAME = "formants"
-FEATURE_VERSION = "1"
+FEATURE_VERSION = "2"
 
 N_FORMANTS = 3
 LOWER_PERCENTILE = 10
@@ -36,7 +36,11 @@ UPPER_PERCENTILE = 90
 # exactly halfway between two pitch frames despite floating-point rounding.
 GRID_TOLERANCE = 1e-6
 
-FEATURE_COLUMNS = [
+# Frame loudness for the louder-half selection is the RMS level in a window
+# of this length centred on the formant frame.
+LOUD_HALF_ENERGY_WINDOW_S = 0.025
+
+ALL_VOICED_COLUMNS = [
     "f1_median_hz",
     "f1_p10_hz",
     "f1_p90_hz",
@@ -49,6 +53,22 @@ FEATURE_COLUMNS = [
     "n_formant_frames",
     "formant_frame_fraction",
 ]
+
+# The same statistics from the louder half of the speech-active voiced frames.
+LOUD_HALF_COLUMNS = [
+    "f1_loud_half_median_hz",
+    "f1_loud_half_p10_hz",
+    "f1_loud_half_p90_hz",
+    "f2_loud_half_median_hz",
+    "f2_loud_half_p10_hz",
+    "f2_loud_half_p90_hz",
+    "f3_loud_half_median_hz",
+    "f3_loud_half_p10_hz",
+    "f3_loud_half_p90_hz",
+    "n_loud_half_formant_frames",
+]
+
+FEATURE_COLUMNS = ALL_VOICED_COLUMNS + LOUD_HALF_COLUMNS
 
 REQUIRED_CONFIG_KEYS = (
     "time_step_s",
@@ -79,6 +99,8 @@ class FormantTrack:
       voiced: Praat's pitch tracker considers the frame voiced.
       valid_formants: F1-F3 are present, positive and correctly ordered.
       used: all three conditions are true, so the frame enters the summary.
+      loud_half: the frame is in the louder half of the speech-active voiced
+        frames. It enters the louder-half summary if it is also used.
 
     All frames, including those not used, remain in this track.
     """
@@ -90,6 +112,7 @@ class FormantTrack:
     voiced: np.ndarray
     valid_formants: np.ndarray
     used: np.ndarray
+    loud_half: np.ndarray
     time_step_s: float
 
 
@@ -258,6 +281,44 @@ def _voiced_at_times(
     return voiced
 
 
+def _louder_half(
+    audio: np.ndarray,
+    sample_rate: int,
+    times_s: np.ndarray,
+    candidates: np.ndarray,
+) -> np.ndarray:
+    """Mark the louder half of the candidate frames.
+
+    Loudness is the RMS level of the waveform in a short window centred on
+    each frame. Frames are ranked among the candidates only (speech-active
+    voiced frames), before any formant-validity check, so the choice does
+    not depend on the Burg estimates. An odd count keeps the extra frame
+    and equal levels are resolved by time. Loudness is not a vowel detector.
+    """
+
+    selected = np.zeros(len(times_s), dtype=bool)
+    candidate_indices = np.flatnonzero(candidates)
+    if len(candidate_indices) == 0:
+        return selected
+
+    # Cumulative squared samples give each window's energy directly.
+    # Windows are clipped at the edges of the recording.
+    width = max(1, round(LOUD_HALF_ENERGY_WINDOW_S * sample_rate))
+    centre = np.rint(times_s * sample_rate).astype(int)
+    first = np.clip(centre - width // 2, 0, len(audio))
+    last = np.clip(centre - width // 2 + width, 0, len(audio))
+
+    squares = np.square(np.asarray(audio, dtype=np.float64))
+    cumulative = np.concatenate(([0.0], np.cumsum(squares)))
+    power = np.maximum(cumulative[last] - cumulative[first], 0.0)
+    rms = np.sqrt(power / np.maximum(last - first, 1))
+
+    ranked = np.argsort(-rms[candidate_indices], kind="stable")
+    keep_count = (len(candidate_indices) + 1) // 2
+    selected[candidate_indices[ranked[:keep_count]]] = True
+    return selected
+
+
 def extract_formant_track(
     audio: np.ndarray,
     sample_rate: int,
@@ -306,6 +367,7 @@ def extract_formant_track(
         & np.all(np.diff(formants_hz, axis=1) > 0, axis=1)
     )
     used = in_speech & voiced & valid_formants
+    loud_half = _louder_half(audio, sample_rate, times_s, in_speech & voiced)
 
     return FormantTrack(
         times_s=times_s,
@@ -315,6 +377,7 @@ def extract_formant_track(
         voiced=voiced,
         valid_formants=valid_formants,
         used=used,
+        loud_half=loud_half,
         time_step_s=time_step_s,
     )
 
@@ -334,7 +397,7 @@ def summarise_formants(track: FormantTrack, formant_config: dict) -> dict:
         raise InsufficientFormantFramesError("No formant frames fall inside speech intervals.")
 
     # The minimum uses cumulative usable frames, not one continuous segment.
-    # For a 10 ms step, 1.0 s of usable material requires 100 frames.
+    # For a 10 ms step, a 2.0 s minimum requires 200 frames.
     min_frames = int(np.ceil(round(
         formant_config["min_usable_formant_s"] / track.time_step_s, 9
     )))
@@ -365,6 +428,38 @@ def summarise_formants(track: FormantTrack, formant_config: dict) -> dict:
     return summary
 
 
+def summarise_loud_half(track: FormantTrack, formant_config: dict) -> dict:
+    """Calculate the same F1-F3 statistics from the louder half only.
+
+    Reuses summarise_formants on the frames that are both used and in the
+    louder half. This selection holds about half the frames, so it must
+    reach half of min_usable_formant_s. Raises
+    InsufficientFormantFramesError when it does not.
+    """
+
+    loud_track = replace(track, used=track.used & track.loud_half)
+    loud_config = dict(
+        formant_config,
+        min_usable_formant_s=formant_config["min_usable_formant_s"] / 2,
+    )
+
+    try:
+        summary = summarise_formants(loud_track, loud_config)
+    except InsufficientFormantFramesError as error:
+        raise InsufficientFormantFramesError(f"Louder half: {error}") from error
+
+    loud_summary = {}
+    for index in range(N_FORMANTS):
+        label = f"f{index + 1}"
+        for statistic in ("median", "p10", "p90"):
+            loud_summary[f"{label}_loud_half_{statistic}_hz"] = summary[
+                f"{label}_{statistic}_hz"
+            ]
+
+    loud_summary["n_loud_half_formant_frames"] = summary["n_formant_frames"]
+    return loud_summary
+
+
 def feature_columns(config: dict) -> list[str]:
     """Return the formant output columns required by the DSP runner."""
 
@@ -393,4 +488,6 @@ def extract(
         formant_config=config["feature"],
         speech_mask_config=config["speech_mask"],
     )
-    return summarise_formants(track, config["feature"])
+    summary = summarise_formants(track, config["feature"])
+    summary.update(summarise_loud_half(track, config["feature"]))
+    return summary

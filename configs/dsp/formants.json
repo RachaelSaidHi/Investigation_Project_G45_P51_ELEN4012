@@ -4,7 +4,7 @@
   "formant_ceiling_hz": 5250.0,
   "window_length_s": 0.025,
   "pre_emphasis_from_hz": 50.0,
-  "min_usable_formant_s": 1.0,
+  "min_usable_formant_s": 2.0,
   "voicing_pitch": {
     "time_step_s": 0.01,
     "pitch_floor_hz": 65.0,

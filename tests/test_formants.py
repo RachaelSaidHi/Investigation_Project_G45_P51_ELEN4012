@@ -17,13 +17,16 @@ from src.dsp.extraction_pipeline import (
 )
 from src.dsp.features import formants
 from src.dsp.features.formants import (
+    ALL_VOICED_COLUMNS,
     FEATURE_COLUMNS,
+    LOUD_HALF_COLUMNS,
     FormantTrack,
     InsufficientFormantFramesError,
     extract,
     extract_formant_track,
     feature_columns,
     summarise_formants,
+    summarise_loud_half,
 )
 from src.dsp.features.pitch import PitchTrack
 
@@ -106,7 +109,9 @@ def add_silence(signal: np.ndarray, duration_s: float = 0.5) -> np.ndarray:
     return np.concatenate([silence, signal, silence])
 
 
-def make_track(formants_hz, in_speech=None, voiced=None, time_step_s=0.01) -> FormantTrack:
+def make_track(
+    formants_hz, in_speech=None, voiced=None, time_step_s=0.01, loud_half=None,
+) -> FormantTrack:
     """Build known frame values directly to test selection and summaries."""
 
     values = np.asarray(formants_hz, dtype=np.float64)
@@ -119,6 +124,9 @@ def make_track(formants_hz, in_speech=None, voiced=None, time_step_s=0.01) -> Fo
     in_speech = np.asarray(in_speech, dtype=bool)
     voiced = np.asarray(voiced, dtype=bool)
     valid = np.isfinite(values).all(axis=1)
+    if loud_half is None:
+        loud_half = in_speech & voiced
+    loud_half = np.asarray(loud_half, dtype=bool)
 
     return FormantTrack(
         times_s=np.arange(n_frames) * time_step_s,
@@ -128,6 +136,7 @@ def make_track(formants_hz, in_speech=None, voiced=None, time_step_s=0.01) -> Fo
         voiced=voiced,
         valid_formants=valid,
         used=in_speech & voiced & valid,
+        loud_half=loud_half,
         time_step_s=time_step_s,
     )
 
@@ -152,13 +161,17 @@ class TestModuleInterface:
     def test_feature_interface_and_columns(self):
         validate_feature_module(formants)
         assert formants.FEATURE_NAME == "formants"
-        assert isinstance(formants.FEATURE_VERSION, str)
+        assert formants.FEATURE_VERSION == "2"
 
         assert feature_columns(make_config()) == [
             "f1_median_hz", "f1_p10_hz", "f1_p90_hz",
             "f2_median_hz", "f2_p10_hz", "f2_p90_hz",
             "f3_median_hz", "f3_p10_hz", "f3_p90_hz",
             "n_formant_frames", "formant_frame_fraction",
+            "f1_loud_half_median_hz", "f1_loud_half_p10_hz", "f1_loud_half_p90_hz",
+            "f2_loud_half_median_hz", "f2_loud_half_p10_hz", "f2_loud_half_p90_hz",
+            "f3_loud_half_median_hz", "f3_loud_half_p10_hz", "f3_loud_half_p90_hz",
+            "n_loud_half_formant_frames",
         ]
         assert set(FEATURE_COLUMNS).issubset(get_result_columns(formants, make_config()))
 
@@ -447,7 +460,7 @@ class TestSyntheticExtraction:
         assert np.all(np.diff(track.times_s) > 0)
 
         summary = summarise_formants(track, config["feature"])
-        assert list(summary) == FEATURE_COLUMNS
+        assert list(summary) == ALL_VOICED_COLUMNS
         assert all(np.isfinite(float(value)) for value in summary.values())
 
     def test_results_are_deterministic_and_ignore_metadata(self):
@@ -469,6 +482,92 @@ class TestSyntheticExtraction:
     def test_insufficient_speech_fails_in_shared_mask(self):
         with pytest.raises(ValueError, match="Insufficient speech"):
             extract(add_silence(make_vowel(duration_s=0.4)), SAMPLE_RATE, None, make_config())
+
+
+class TestLouderHalf:
+
+    def test_summary_uses_only_used_frames_in_the_louder_half(self):
+        values = np.vstack([
+            np.tile([500.0, 1500.0, 2500.0], (150, 1)),
+            np.tile([700.0, 1200.0, 2600.0], (150, 1)),
+        ])
+        values[290:, 2] = np.nan  # Loud but invalid frames must not be summarised.
+        loud_half = np.zeros(300, dtype=bool)
+        loud_half[150:] = True
+
+        summary = summarise_loud_half(
+            make_track(values, loud_half=loud_half), make_config()["feature"]
+        )
+        assert list(summary) == LOUD_HALF_COLUMNS
+        assert summary["n_loud_half_formant_frames"] == 140
+        assert summary["f1_loud_half_median_hz"] == pytest.approx(700.0)
+        assert summary["f2_loud_half_p10_hz"] == pytest.approx(1200.0)
+        assert summary["f3_loud_half_p90_hz"] == pytest.approx(2600.0)
+
+    @pytest.mark.parametrize("n_loud_frames, passes", [(50, True), (49, False)])
+    def test_louder_half_needs_half_the_minimum(self, n_loud_frames, passes):
+        """With a 1.0 s minimum, the louder half needs 0.5 s (50 frames)."""
+
+        values = np.tile([500.0, 1500.0, 2500.0], (200, 1))
+        loud_half = np.zeros(200, dtype=bool)
+        loud_half[:n_loud_frames] = True
+        track = make_track(values, loud_half=loud_half)
+        config = make_config()["feature"]
+
+        if passes:
+            assert summarise_loud_half(track, config)["n_loud_half_formant_frames"] == 50
+        else:
+            with pytest.raises(InsufficientFormantFramesError, match="Louder half"):
+                summarise_loud_half(track, config)
+
+    def test_production_minima_all_voiced_two_seconds_and_louder_half_one(self):
+        """With a 2 s all-voiced minimum, the louder half needs 1 s."""
+
+        config = make_config()["feature"]
+        config["min_usable_formant_s"] = 2.0
+        values = np.tile([500.0, 1500.0, 2500.0], (200, 1))
+        loud_mask = np.zeros(200, dtype=bool)
+        loud_mask[:100] = True
+        track = make_track(values, loud_half=loud_mask)
+
+        assert summarise_formants(track, config)["n_formant_frames"] == 200
+        assert summarise_loud_half(track, config)["n_loud_half_formant_frames"] == 100
+
+        loud_mask[99] = False
+        with pytest.raises(InsufficientFormantFramesError, match="Louder half"):
+            summarise_loud_half(make_track(values, loud_half=loud_mask), config)
+
+    def test_track_marks_the_louder_voiced_frames(self):
+        """A loud vowel followed by the same vowel 20 dB quieter: the louder
+        half of the voiced frames must lie in the loud vowel."""
+
+        loud = make_vowel(duration_s=1.5)
+        audio = add_silence(np.concatenate([loud, 0.1 * make_vowel(duration_s=1.5)]))
+        config = make_config()
+        track = extract_formant_track(
+            audio, SAMPLE_RATE, config["feature"], config["speech_mask"]
+        )
+        candidates = track.in_speech & track.voiced
+        boundary_s = 0.5 + 1.5
+
+        assert not (track.loud_half & ~candidates).any()
+        assert track.loud_half.sum() == (candidates.sum() + 1) // 2
+        assert (track.times_s[track.loud_half] < boundary_s + 0.02).all()
+
+    def test_extract_reports_both_selections(self):
+        """A long quiet vowel and a shorter loud one: all voiced frames
+        mostly describe the quiet vowel, the louder half the loud one."""
+
+        loud = make_vowel(formants_hz=(700.0, 1200.0, 2500.0), duration_s=1.2)
+        quiet = 0.1 * make_vowel(formants_hz=(300.0, 2200.0, 2900.0), duration_s=2.0)
+        audio = add_silence(np.concatenate([loud, quiet]))
+
+        summary = extract(audio, SAMPLE_RATE, None, make_config())
+        assert list(summary) == FEATURE_COLUMNS
+        assert summary["f1_median_hz"] == pytest.approx(300.0, abs=25.0)
+        assert summary["f1_loud_half_median_hz"] == pytest.approx(700.0, abs=25.0)
+        assert summary["f2_loud_half_median_hz"] == pytest.approx(1200.0, abs=50.0)
+        assert summary["n_loud_half_formant_frames"] < summary["n_formant_frames"]
 
 
 class TestPipelineIntegration:
