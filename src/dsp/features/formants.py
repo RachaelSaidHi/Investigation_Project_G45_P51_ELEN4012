@@ -162,7 +162,7 @@ def _run_praat_formants(
     ceiling = formant_config["formant_ceiling_hz"]
     if ceiling >= sample_rate / 2:
         raise ValueError(
-            "formant_ceiling_hz must not exceed half the sample rate "
+            "formant_ceiling_hz must be below half the sample rate "
             f"({sample_rate / 2:.0f} Hz)."
         )
     
