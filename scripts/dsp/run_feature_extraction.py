@@ -64,7 +64,7 @@ FEATURE_MODULES = [
     "mfcc",
     "pitch",
     # "rms_test",
-    # "formants",
+    "formants",
 ]
 
 
