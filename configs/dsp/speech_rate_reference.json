@@ -1,0 +1,5 @@
+{
+  "reference_column": "reference_transcript",
+  "min_reference_words": 3
+}
+

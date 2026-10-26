@@ -61,6 +61,9 @@ class TestColumnConventions:
     def test_accent_group_is_blank(self, saa_manifest):
         assert (saa_manifest["accent_group"] == "").all()
 
+    def test_processed_filepath_is_blank(self, saa_manifest):
+        assert (saa_manifest["processed_filepath"] == "").all()
+
     def test_age_group_is_blank(self, saa_manifest):
         assert (saa_manifest["age_group"] == "").all()
 

@@ -20,6 +20,7 @@ def make_valid_manifest(tmp_path):
         "source_split": "",
         "source_sample_id": "example",
         "filepath": "saa/example.mp3",
+        "processed_filepath": "",
         "speaker_id": "saa_spk_1",
         "accent_raw": "english",
         "accent_group": "",
@@ -32,7 +33,6 @@ def make_valid_manifest(tmp_path):
         "age_onset": 0,
         "duration_s": 10.0,
         "original_sample_rate": 44100,
-        "snr_est": "",
         "domain": "read_fixed",
         "reference_transcript": "example transcript",
     }

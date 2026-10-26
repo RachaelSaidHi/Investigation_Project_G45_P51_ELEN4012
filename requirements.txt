@@ -1,10 +1,35 @@
 # Use exact versions
+
+# Data handling
 pandas==3.0.5
-mutagen==1.48.1
-pytest==9.1.1
+numpy==2.5.3
 datasets==5.0.1
 
-# I still need to put my versions
-transformers
-librosa
-jiwer
+# audio preprocessing and QC
+librosa==1.0.0
+soxr==1.1.0
+scipy==1.18.1
+soundfile==0.14.0
+mutagen==1.48.1
+
+# testing
+pytest==9.1.1
+
+# ASR
+transformers==5.17.0
+jiwer==4.0.0
+huggingface-hub==1.31.0
+
+# DSP
+praat-parselmouth
+cmudict
+num2words
+
+# Results and analysis (notebooks)
+matplotlib==3.11.2
+statsmodels
+scikit-learn
+jupyter
+
+# PyTorch is installed separately depending on whether CPU or GPU
+# execution is required. See README for installation instructions.

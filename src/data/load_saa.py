@@ -1,3 +1,17 @@
+"""Load the Speech Accent Archive into the common manifest schema.
+
+Reads speakers_all.csv and the reading passage from data/raw/saa/ and
+creates one manifest row per recording marked as available whose MP3 exists
+on disk. Two recordings listed as available but absent from the Kaggle
+release (KNOWN_MISSING_FILES) are skipped; any other missing file raises an
+error.
+
+Every row shares the same reference transcript (the fixed reading passage)
+and the domain "read_fixed". Duration and sample rate are read from each MP3
+header. No study selection is applied, so accent_group and
+processed_filepath are left blank.
+"""
+
 from pathlib import Path
 from mutagen.mp3 import MP3
 
@@ -64,6 +78,7 @@ def load_saa(data_root: Path) -> pd.DataFrame:
             "source_split": "",
             "source_sample_id": source_sample_id,
             "filepath": audio_path.relative_to(data_root).as_posix(),
+            "processed_filepath": "",
             "speaker_id": f"saa_spk_{int(row['speakerid'])}",
             "accent_raw": clean_text(row["native_language"]),
             "accent_group": "",
@@ -76,7 +91,6 @@ def load_saa(data_root: Path) -> pd.DataFrame:
             "age_onset": row["age_onset"],
             "duration_s": audio_info.info.length,
             "original_sample_rate": audio_info.info.sample_rate,
-            "snr_est": "",
             "domain": "read_fixed",
             "reference_transcript": reference_transcript,
         }

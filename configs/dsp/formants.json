@@ -1,0 +1,21 @@
+{
+  "time_step_s": 0.01,
+  "max_number_of_formants": 5,
+  "formant_ceiling_hz": 5250.0,
+  "window_length_s": 0.025,
+  "pre_emphasis_from_hz": 50.0,
+  "min_usable_formant_s": 2.0,
+  "voicing_pitch": {
+    "time_step_s": 0.01,
+    "pitch_floor_hz": 65.0,
+    "pitch_ceiling_hz": 400.0,
+    "max_number_of_candidates": 15,
+    "very_accurate": false,
+    "silence_threshold": 0.03,
+    "voicing_threshold": 0.45,
+    "octave_cost": 0.01,
+    "octave_jump_cost": 0.35,
+    "voiced_unvoiced_cost": 0.14,
+    "min_voiced_s": 1.0
+  }
+}

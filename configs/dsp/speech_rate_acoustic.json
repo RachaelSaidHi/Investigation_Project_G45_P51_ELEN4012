@@ -1,0 +1,21 @@
+{
+    "intensity_min_pitch_hz": 50.0,
+    "intensity_time_step_s": null,
+
+    "intensity_reference_quantile": 0.99,
+    "silence_threshold_db": -25.0,
+    "min_dip_db": 2.0,
+
+    "pitch_time_step_s": 0.02,
+    "pitch_floor_hz": 30.0,
+    "pitch_ceiling_hz": 450.0,
+    "pitch_max_candidates": 4,
+    "pitch_very_accurate": false,
+    "pitch_silence_threshold": 0.03,
+    "pitch_voicing_threshold": 0.25,
+    "pitch_octave_cost": 0.01,
+    "pitch_octave_jump_cost": 0.35,
+    "pitch_voiced_unvoiced_cost": 0.25,
+
+    "min_syllables": 3
+}

@@ -159,7 +159,7 @@ class TestNormalizeText:
         assert reference == hypothesis == "inflammation of the"
  
     def test_punctuation_is_not_removed_for_other_datasets(self):
-        text, removed = normalize_text("stable comma alert", "speech_accent_archive")
+        text, removed = normalize_text("stable comma alert", "saa")
  
         assert "comma" in text
         assert removed == 0
@@ -177,5 +177,16 @@ class TestNormalizeText:
     def test_unknown_dataset_fails(self):
         with pytest.raises(ValueError, match="Unknown dataset"):
             normalize_text("stable alert", "afrispeach")
+
+
+    def test_afrispeech_punctuation_removed_only_when_flag_is_true(self):
+        text = "pain comma fever full stop"
+
+        assert normalize_text(text, "afrispeech", drop_punctuation_words=True) == ("pain fever", 2)
+        assert normalize_text(text, "afrispeech", drop_punctuation_words=False) == (text, 0)
+
+
+    def test_flag_has_no_effect_outside_afrispeech(self):
+        assert normalize_text("pain comma", "saa", drop_punctuation_words=True) == ("pain comma", 0)
 
 # run using python -m pytest tests/test_normalization.py -v

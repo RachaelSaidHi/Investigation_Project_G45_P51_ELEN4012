@@ -1,12 +1,6 @@
 {
-    "revision": "main",
+    "revision": "b538c6e111914a812af28ff677f8cffc9b404b7d",
     "selections": [
-        {
-            "accent": "afemai",
-            "splits": [
-                "test"
-            ]
-        },
         {
             "accent": "hausa",
             "splits": [
@@ -15,6 +9,12 @@
         },
         {
             "accent": "yoruba",
+            "splits": [
+                "test"
+            ]
+        },
+        {
+            "accent": "swahili",
             "splits": [
                 "test"
             ]

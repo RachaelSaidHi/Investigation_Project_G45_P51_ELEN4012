@@ -1,6 +1,9 @@
 # raw datasets
 data/raw/
 
+# processed datasets
+data/processed/
+
 # generated manifests
 data/manifests/
 
@@ -27,3 +30,23 @@ Thumbs.db__pycache__
 
 # Experimentation files
 *experiment.py
+src/asr/*.mp3
+
+# Results
+results/asr/
+results/analysis/
+results/dsp/
+# results/dsp/pitch_validation/ceiling_comparison_01
+
+# inspection files
+# inspection/
+scripts/inspection/results
+
+# old dev manifest 
+build_dev_manifest_without_afrispeech.py
+test_dev_manifest_without_afrispeech.py
+test_dev_manifest_old_from_study_manifest.py
+
+# extra dsp experimentation stuff
+speech_mask_floor_labels.csv
+check_speech_mask_prevalence_old.py
